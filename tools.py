@@ -32,5 +32,7 @@ class Timer:
     def sleep(self, t=0):
         time.sleep(t)
 
+
+
 def mem(x):
     print("Memory size of numpy array in Gb:", x.size * x.itemsize / 1e9)

@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-from .profiles import tau, convolve_res
+from .line_profiles import line, convolve_res, H2abs
 
 class catalog(list):
     """
@@ -200,21 +200,22 @@ class catalog(list):
         self.missed.close()
         self.close()
 
-    def add_dla(self, name, z_qso, debug=False):
-
+    def add_dla(self, name, z_qso, z_dla=None, logN=None, debug=False):
         x, y, err = self.cat[name + '/loglam'][:], self.cat[name + '/flux'][:], 1 / np.sqrt(self.cat[name + '/ivar'][:])
         imin, imax = max(x[0], np.log10(self.parent.lyc * (1 + z_qso))), min(x[-1], np.log10(self.parent.lya * (1 + z_qso) * (1 - 2e3/3e5)))
-        z_dla = 10 ** (np.random.randint(int(imin * 1e4), int(imax * 1e4)) / 1e4) / self.parent.lya - 1
-        NHI = 19.5 + np.random.rand() ** 2 * 3
-        t = tau(logN=NHI, b=30, z=z_dla, resolution=2000)
+        if z_dla is None:
+            z_dla = 10 ** (np.random.randint(int(imin * 1e4), int(imax * 1e4)) / 1e4) / self.parent.lya - 1
+        if logN is None:
+            logN = 19.5 + np.random.rand() ** 2 * 3
+        t = line(logN=logN, b=30, z=z_dla, resolution=2000)
         if debug:
             m = (x > imin) * (x < imax)
             print(name, z_qso)
             print(imin, imax)
-            print(z_dla, NHI)
+            print(z_dla, logN)
             plt.plot(10 ** x[m], y[m])
-        t.calctau(10 ** x)
-        y = y * convolve_res(10**x, np.exp(-t.tau), t.resolution) + err * (1 - np.exp(-t.tau)) * np.random.randn(len(x)) / 2
+        f = convolve_res(10 ** x, np.exp(-t.tau(10 ** x)), t.resolution)
+        y = y * f + err * (1 - f) * np.random.randn(len(x)) / 2
         y[np.logical_not(np.isfinite(y))] = np.nanmedian(y)
         self.cat[name + '/flux'][...] = y
 
@@ -222,9 +223,9 @@ class catalog(list):
             plt.plot(10 ** x[m], y[m])
             plt.show()
 
-        return z_dla, NHI
+        return z_dla, logN
 
-    def make_mock(self, num=None, source='web', dla_cat=None):
+    def make_dla_mock(self, num=None, source='web', dla_cat=None):
         """
         append the spectra of the catalog from the source (website or local file) and store it in hdf5 file in <data/> dataset
         check if spectrum is alaredy in catalog
@@ -290,6 +291,99 @@ class catalog(list):
         self.cat.create_dataset('meta/qso', data=data[mask])
         self.add_attr('dla', d)
         self.cat['meta/qso']['dla'] = d
+
+        if source != 'web':
+            sdss.close()
+
+        self.missed.close()
+        self.close()
+
+    def add_H2(self, name, z_qso, debug=False):
+        H2cutoff = self.parent.H2bands['L2-0']
+        x, y, err = self.cat[name + '/loglam'][:], self.cat[name + '/flux'][:], 1 / np.sqrt(self.cat[name + '/ivar'][:])
+        imin, imax = max(x[0], np.log10(self.parent.lyc * (1 + z_qso))), min(x[-1], np.log10(H2cutoff * (1 + z_qso) * (1 - 2e3 / 3e5)))
+        z_H2 = 10 ** (np.random.randint(int(imin * 1e4), int(imax * 1e4)) / 1e4) / H2cutoff - 1
+        logN = 19 + np.random.rand() ** 2 * 3
+        x1, f = self.H2.calc_profile(x=10**x, z=z_H2, logN=logN, b=5, j=6, T=100, exc='low')
+        f = convolve_res(x1, f, 1800)
+        if debug:
+            m = (x > imin) * (x < imax)
+            print(name, z_qso)
+            print(imin, imax)
+            print(z_H2, logN)
+            plt.plot(10 ** x[m], y[m])
+        y = y * f + err * (1 - f) * np.random.randn(len(x)) / 2
+        y[np.logical_not(np.isfinite(y))] = np.nanmedian(y)
+        self.cat[name + '/flux'][...] = y
+
+        if debug:
+            plt.plot(10 ** x[m], y[m])
+            plt.show()
+
+        return z_H2, logN
+
+    def make_H2_mock(self, num=None, source='web', dla_cat=None):
+        """
+        append the spectra of the catalog from the source (website or local file) and store it in hdf5 file in <data/> dataset
+        check if spectrum is alaredy in catalog
+        stored missing files in <missed.dat>
+        parameters:
+            - num           :  number of spectra to be generated
+            - source        :  filename of the catalog contained SDSS spectra
+            - dla_cat       :  the path to file contains DLA catalog (in Noterdaeme catalog for now)
+        """
+        print(source)
+        self.missed = open('missed.dat', 'a')
+        self.open(stored=self.stored, attr='a')
+        if source != 'web':
+            sdss = h5py.File(source, 'r')
+
+        if num == None:
+            num = len(self.cat['meta/qso'])
+        if 'meta/num' not in self.cat:
+            self.cat.create_dataset('meta/num', data=[0])
+        d = np.zeros(num)
+        mask = np.zeros(len(self.cat['meta/qso'][:]), dtype=bool)
+        n = 0
+        self.H2 = H2abs()
+        for i, q in enumerate(self.cat['meta/qso'][:]):
+            name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBERID'])
+            if name not in self.cat:
+                res = False
+                sdss_name = 'data/{0:05d}/{1:04d}/{2:05d}/'.format(q['PLATE'], q['FIBERID'], q['MJD'])
+                if sdss_name not in sdss:
+                    sdss_name = 'data/{0:05d}_{1:05d}_{2:04d}/'.format(q['PLATE'], q['MJD'], q['FIBERID'])
+                res = (sdss_name in sdss) and (len(sdss[sdss_name + 'loglam'][:]) > 100) and (self.cat['meta/qso'][i]['Z'] > 10 ** sdss[sdss_name + 'loglam'][:][100] / self.parent.H2bands['L2-0'] / (1 - 2e3 / 3e5) - 1)
+                if res:
+                    for attr in ['loglam', 'flux', 'ivar', 'and_mask']:
+                        if name + '/' + attr not in self.cat:
+                            self.cat.create_dataset(name + '/' + attr, data=sdss[sdss_name + attr][:], dtype=sdss[sdss_name + attr].dtype)
+                    mask[i] = True
+                    z_H2, logN = self.add_H2(name, z_qso=self.cat['meta/qso'][i]['Z'])
+                    if 1:
+                        self.add_dla(name, z_dla=z_H2, logN=20.7, z_qso=self.cat['meta/qso'][i]['Z'])
+                    d[n] = 1
+                    # print(name + '/dla')
+                    data = np.array([(z_H2, logN)], np.dtype([('z_H2', np.float32), ('logN', np.float32)]))
+
+                    self.cat.create_dataset(name.replace('data', 'meta') + '/H2', data=data, chunks=True,
+                                            dtype=data.dtype)
+                    self.cat.flush()
+                    n += 1
+                    print(n)
+                    self.cat['meta/num'][0] = [self.cat['meta/num'][0] + 1] if 'meta/num' in self.cat else [1]
+                else:
+                    # print('missed: {0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))
+                    self.missed.write('{0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))
+            if n >= num:
+                break
+
+        print(sum(mask))
+        data = self.cat['meta/qso'][...]
+        del self.cat['meta/qso']
+        self.cat.create_dataset('meta/qso', data=data[mask])
+        self.add_attr('H2', d)
+        self.cat['meta/qso']['H2'] = d
 
         if source != 'web':
             sdss.close()
