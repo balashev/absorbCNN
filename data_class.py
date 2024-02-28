@@ -17,8 +17,8 @@ class data_structure(list):
         """
         self.parent = parent
         self.shape = (0, )
-        self.attrs = ['specs', 'loglams', 'flag', 'pos', 'logN', 'inds']
-        self.dtype = {'specs': np.float32, 'loglams': np.float32, 'flag': bool, 'pos': int, 'logN': np.float32,
+        self.attrs = ['specs', 'reds', 'flag', 'pos', 'logN', 'inds']
+        self.dtype = {'specs': np.float32, 'reds': np.float32, 'flag': bool, 'pos': int, 'logN': np.float32,
                       'inds': int, 'labels': [('flag', np.bool_), ('pos', np.int_), ('logN', np.single)]}
         self.timer = Timer() if timing else None
         self.filename = filename
@@ -171,7 +171,7 @@ class data_structure(list):
             m = (inds == i)
             self.valid[m] = True
             self.open()
-            self.append(dset='valid', specs=self.data['full/specs'][m], loglams=self.data['full/loglams'][m], inds=self.data['full/inds'][m], flag=self.data['full/flag'][m], pos=self.data['full/pos'][m], logN=self.data['full/logN'][m])
+            self.append(dset='valid', specs=self.data['full/specs'][m], reds=self.data['full/reds'][m], inds=self.data['full/inds'][m], flag=self.data['full/flag'][m], pos=self.data['full/pos'][m], logN=self.data['full/logN'][m])
         if self.timer:
             self.timer.time('create valid')
         #print(np.sum(flag[~self.valid] == 1))
@@ -204,7 +204,7 @@ class data_structure(list):
 
             x = self.data['full/specs']
 
-            self.append_mask(dset='train', mask=m, randomize=True) #specs=self.data['full/specs'][m,:][m2], loglams=self.data['full/loglams'][m][m2], inds=self.data['full/inds'][m][m2], flag=self.data['full/flag'][m][m2], dla_pos=self.data['full/dla_pos'][m][m2], dla_NHI=self.data['full/dla_NHI'][m][m2])
+            self.append_mask(dset='train', mask=m, randomize=True) #specs=self.data['full/specs'][m,:][m2], reds=self.data['full/reds'][m][m2], inds=self.data['full/inds'][m][m2], flag=self.data['full/flag'][m][m2], dla_pos=self.data['full/dla_pos'][m][m2], dla_NHI=self.data['full/dla_NHI'][m][m2])
             if self.timer != None:
                 self.timer.time(f'append {i}')
 
@@ -234,7 +234,7 @@ class data_structure(list):
         """
         if sdss == None:
             args = np.where(self.get('inds') == ind)[0]
-            inds = args[np.argsort(self.get('loglams')[args])]
+            inds = args[np.argsort(self.get('reds')[args])]
             return [self.get(attr)[inds] for attr in self.attrs]
         else:
             return self.make(self.parent.cat, ind=ind, dropout=0.0, dropout_dla=0.0)

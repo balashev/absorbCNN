@@ -27,7 +27,15 @@ class CNN_h2(CNN):
 
         if action == 'new':
             self.d.new()
-            self.d.make(num=num, valid=valid, dropout=dropout, dropout_dla=dropout_dla, start=start)
+            self.d.make()
+
+            if 0:
+                specs = self.d.make(3)
+                print('ok', specs.shape)
+                for pos in range(0, specs.shape[0], 50):
+                    self.d.plot_data(3, pos, specs=specs)
+            #plt.show()
+            #self.d.make(num=num, valid=valid, dropout=dropout, dropout_dla=dropout_dla, start=start)
             # d.make_sets(valid=0.1, dropout=0.3, dropout_dla=0.8, shuffle=True, batch=30000)
 
         elif action == 'load':

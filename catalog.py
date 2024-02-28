@@ -304,6 +304,7 @@ class catalog(list):
         imin, imax = max(x[0], np.log10(self.parent.lyc * (1 + z_qso))), min(x[-1], np.log10(H2cutoff * (1 + z_qso) * (1 - 2e3 / 3e5)))
         z_H2 = 10 ** (np.random.randint(int(imin * 1e4), int(imax * 1e4)) / 1e4) / H2cutoff - 1
         logN = 19 + np.random.rand() ** 2 * 3
+        z_H2, logN = z_qso - 0.1, 20.5
         x1, f = self.H2.calc_profile(x=10**x, z=z_H2, logN=logN, b=5, j=6, T=100, exc='low')
         f = convolve_res(x1, f, 1800)
         if debug:
@@ -313,6 +314,7 @@ class catalog(list):
             print(z_H2, logN)
             plt.plot(10 ** x[m], y[m])
         y = y * f + err * (1 - f) * np.random.randn(len(x)) / 2
+        y = f
         y[np.logical_not(np.isfinite(y))] = np.nanmedian(y)
         self.cat[name + '/flux'][...] = y
 
@@ -364,7 +366,7 @@ class catalog(list):
                         self.add_dla(name, z_dla=z_H2, logN=20.7, z_qso=self.cat['meta/qso'][i]['Z'])
                     d[n] = 1
                     # print(name + '/dla')
-                    data = np.array([(z_H2, logN)], np.dtype([('z_H2', np.float32), ('logN', np.float32)]))
+                    data = np.array([(z_H2, logN)], np.dtype([('z_abs', np.float32), ('logN', np.float32)]))
 
                     self.cat.create_dataset(name.replace('data', 'meta') + '/H2', data=data, chunks=True,
                                             dtype=data.dtype)

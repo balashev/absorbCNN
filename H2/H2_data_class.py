@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.lib.stride_tricks import as_strided
 import warnings
 
 from ..data_class import data_structure
@@ -22,16 +23,42 @@ class h2_data(data_structure):
         self.window = window
         self.bands = bands
         self.shape = (self.window, self.bands)
+        self.h2 = H2abs()
+        self.h2bands = self.h2.get_bands(self.bands)
 
-    def make(self, ind=None, num=None, valid=0.3, dropout=0.7, dropout_dla=0.3, start=0):
+    def make_mask(self, ind, z_qso=0):
+        """
+        Calculate spectral mask to use during the creation of the data structure
+        parameters:
+            -  ind           :  index of the spectra to use
+            -  z_qso         :  the redshift of the quasar
+            -  dlas          :  array of the dlas, to mask the data
+            -  dla_windows   :  the size of the avoidance region around DLA
+        """
+        # print(ind)
+        s = self.parent.cat[ind]
+        # print(dlas)
+        mask = np.ones_like(s['loglam'], dtype=bool)
+        # print(i)
+
+        mask_dla = np.zeros_like(s['loglam'], dtype=bool)
+
+        # get position at QSO redshift and mark the region redwards:
+        v_prox = 3000  # in km/s
+        qso_pos = int((np.log10(self.parent.H2bands['L0-0'] * (1 + z_qso) * (1 - v_prox / 3e5)) - s['loglam'][0]) * 1e4)
+        mask[max(0, qso_pos):] = False
+
+        # masked Ly_cutoff region:
+        mask[:max(0, int((np.log10(self.parent.lyc * (1 + z_qso)) - s['loglam'][0]) * 1e4))] = False
+
+        return mask
+    def make(self, ind=None, num=None, valid=0.3, dropout=0.7, dropout_h2=0.3, start=0):
         print('make cat')
         self.parent.cat.open()
         if num == None:
             num = self.parent.cat.cat['meta/num'][0]
         if num > self.parent.cat.cat['meta/num'][0]:
-            warnings.warn(
-                "The number of spectra (<num> parameter) is more than in the database! Change number <num> to correspond database size",
-                UserWarning)
+            warnings.warn("The number of spectra (<num> parameter) is more than in the database! Change number <num> to correspond database size", UserWarning)
             num = self.parent.cat.cat['meta/num'][0]
         meta = self.parent.cat.cat['meta/qso'][:]
 
@@ -39,8 +66,9 @@ class h2_data(data_structure):
             self.create(dset='valid')
             self.create(dset='train')
 
-        h2 = H2abs()
-
+        delta = [l for l in self.h2.get_bands(self.bands).values()]
+        delta = [int(np.log10(l/delta[0]) * 1e4) for l in delta]
+        print(delta)
         print('Running make H2 catalog script:')
         for i in range(start, start + num):
             # print(i)
@@ -48,40 +76,98 @@ class h2_data(data_structure):
             if ind == None or ind == i:
                 if self.check_bads(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID']):
                     print('bads:', i, meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
-                if (meta[i]['BI_CIV'] < 100) * (
-                        not self.check_bads(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])):
+                if (meta[i]['BI_CIV'] < 100) * (not self.check_bads(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])):
                     if i * 10 % num == 0:
                         print(i, ' of ', num)
                     s = self.parent.cat[i]
+                    if meta[i]['H2']:
+                        self.parent.cat.open()
+                        sdss_name1 = 'data/{0:05d}/{1:04d}/{2:05d}/'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])
+                        sdss_name2 = 'data/{0:05d}_{1:05d}_{2:04d}/'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
+                        # print(sdss_name2)
+                        if sdss_name1 in self.parent.cat.cat:
+                            h2 = self.parent.cat.cat['meta/{0:05d}/{1:04d}/{2:05d}/H2'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])][:]
+                        elif sdss_name2 in self.parent.cat.cat:
+                            h2 = self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
+                            # dlas = sdss.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
+                        else:
+                            print('meta/{0:05d}/{1:05d}/{2:04d}/H2'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID']), ' vaporized in history')
+                        self.parent.cat.close()
+                    print(h2)
+                    if s is not None:
+                        v_prox = 3000 # in km/s
+                        z_min = int((np.log10(self.h2bands['L0-0'] * (1 + meta[i]['Z']) * (1 + v_prox / 3e5)) - s['loglam'][0]) * 1e4)
+                        z_max = (1 + meta[i]['Z']) * (1 + v_prox / 3e5) - 1
+                        z_min = (np.max([10 ** s['loglam'][0], self.parent.lyc * (1 + meta[i]['Z'])]) / self.h2bands['L2-0'] - 1)
+                        print(z_min, z_max)
+                        if z_min < z_max:
+                            num = int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_max)) - s['loglam'][0]) * 1e4 + self.window / 2)) - int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_min)) - s['loglam'][0]) * 1e4 - self.window / 2))
+                            for band, l in self.h2bands.items():
+                                #print(band, l)
+                                i_max = int(np.trunc((np.log10(l * (1 + z_max)) - s['loglam'][0]) * 1e4 + self.window / 2))
+                                i_min = i_max - num
+                                #print(i_min, i_max, i_max - i_min)
+                                stride = s['flux'].strides[0]
+                                if i_max > 0:
+                                    spec = as_strided(s['flux'][max(0, i_min):i_max], shape=[i_max - max(0, i_min), self.window], strides=[stride, stride])
+                                    if i_min < 0:
+                                        spec = np.append(np.median(specs[:-i_min, :], axis=2), spec, axis=0)
+                                else:
+                                    spec = np.median(specs, axis=2)
+                                #print('spec:', spec.shape)
+                                if band == 'L0-0':
+                                    specs = spec[:, :, np.newaxis]
+                                    #print(specs.shape)
+                                else:
+                                    specs = np.append(specs, spec[:, :, np.newaxis], axis=2)
 
-                    shift = 15
-                    for band, l in h2.get_bands(6).items():
-                        ind = np.argmin(np.abs(10**(s['loglam']) / (1 + z) - l)) - shift
-                        print(ind + x[0])
-                        if ind > -x[0]:
-                            f = qso[1][ind + x[0]: ind + x[-1] + 1]
-                            # ax.step(qso[0][m] / (1 + z), qso[1][m], where='mid', color='k')
-                            ax[k].step(x, f, where='mid', color='k')
-                            if 1:
-                                for lin in h2.data['lambda'][(h2.data['jl'] <= 3) * (h2.data['vl'] == 0)]:
-                                    if (lin > (l - 5)) * (lin < (l + 10)):
-                                        ax[k].axvline(np.log10(lin / l) / 0.0001 + shift, ls='--', lw=3, alpha=0.5,
-                                                      color='tomato')
-                                        if 1:
-                                            ax[k].plot(np.log10(h2.x / l / (1 + z)) / 0.0001 + shift, h2.f * 40,
-                                                       color='tomato')
-                                        else:
-                                            f = np.median(data, axis=0)
+                            i_max = int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_max)) - s['loglam'][0]) * 1e4))
+                            #print(i_max, num)
+                            reds = 10 ** s['loglam'][i_max-num:i_max] / self.h2bands['L0-0'] - 1
+                            inds = np.ones(len(reds), dtype=int) * i
+                            flag = np.zeros_like(reds, dtype=bool)
+                            pos = np.zeros_like(reds, dtype=int)
+                            logN = np.zeros_like(reds, dtype=float)
 
-                                        ax[k].set_xlim([x[0], x[-1]])
-                                        ax[k].text(0.03, 0.1, band, transform=ax[k].transAxes, color='tomato',
-                                                   fontsize=20)
+                            #print(h2['z_abs'], reds)
 
-                                        k += 1
-                                        data = np.vstack((data, f))
-                                        y.append(y[-1] + 1)
+                            if len(h2) > 0:
+                                m = (reds < (1 + h2['z_abs']) * 10 ** (self.window / 4 * 1e-4) - 1) * (reds > (1 + h2['z_abs']) * 10 ** (-self.window / 4 * 1e-4) - 1)
+                                print(np.sum(m))
+                                flag[m] = np.ones(np.sum(m))
+                                pos[m] = np.trunc(np.log10((1 + reds[m]) / (1 + h2['z_abs'])) * 1e4)
+                                logN[m] = h2['logN']
+                            #print(flag, pos, logN)
 
-                                        y = y[1:]
+                            if ind == None:
+                                self.append(dset='full', specs=specs, reds=reds, inds=inds, flag=flag, pos=pos, logN=logN)
+
+                                if np.random.random() > valid:
+                                    m = np.append(np.random.choice(np.arange(len(reds))[~flag], int(sum(~flag) * (1 - dropout)), replace=False),
+                                                  np.random.choice(np.arange(len(reds))[flag], int(sum(flag) * (1 - dropout_h2)), replace=False))
+                                    # print(m)
+                                    if len(m) > 1:
+                                        self.append(dset='train', specs=specs[m], reds=reds[m], inds=inds[m], flag=flag[m], pos=pos[m], logN=logN[m])
+                                else:
+                                    self.append(dset='valid', specs=specs, reds=reds, inds=inds, flag=flag, pos=pos, logN=logN)
+                            else:
+                                return specs, reds, flag, pos, logN, inds
+
+
+    def plot_data(self, ind, pos, specs=None):
+        fig, ax = plt.subplots(nrows=self.bands+1, figsize=(12, 2 * self.bands + 6))
+        for k in range(self.bands):
+            ax[k].step(np.arange(specs.shape[1]), specs[pos, :, k], where='mid', color='k')
+            if 0:
+                for lin in self.h2.data['lambda'][(self.h2.data['jl'] <= 3) * (self.h2.data['vl'] == 0)]:
+                    if (lin > (l - 5)) * (lin < (l + 10)):
+                        ax[k].axvline(np.log10(lin / l) / 0.0001 + shift, ls='--', lw=3, alpha=0.5, color='tomato')
+
+            #ax[k].set_xlim([x[0], x[-1]])
+            #ax[k].text(0.03, 0.1, self.h2bands[k], transform=ax[k].transAxes, color='tomato', fontsize=20)
+
+        ax[-1].imshow(specs[pos, :, :].transpose())
+        return fig, ax
 
     def plot_spec(self, ind, add_info=True):
         """
@@ -106,7 +192,7 @@ class h2_data(data_structure):
                 fig, ax = plt.subplots(figsize=(14, 5), dpi=160)
             if add_info:
                 m = self.get('inds') == ind
-                x = 10 ** self.get('loglams')[m]
+                x = (1 + self.get('reds')[m]) * self.h2bands['L0-0']
                 # print(sdss.cat['meta/{0:05d}_{1:04d}_{2:05d}/dla'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:].dtype)
                 # pos = x[np.where((dla_pos[m] == 0) * dla_flags[m])[0][0]] if any(dla_flags[m]) else 0
                 dla_flag, dla_pos, dla_NHI = self.get('flag')[m], self.get('pos')[m], self.get('logN')[m]

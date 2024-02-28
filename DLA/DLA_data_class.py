@@ -71,9 +71,7 @@ class dla_data(data_structure):
         if num == None:
             num = self.parent.cat.cat['meta/num'][0]
         if num > self.parent.cat.cat['meta/num'][0]:
-            warnings.warn(
-                "The number of spectra (<num> parameter) is more than in the database! Change number <num> to correspond database size",
-                UserWarning)
+            warnings.warn("The number of spectra (<num> parameter) is more than in the database! Change number <num> to correspond database size", UserWarning)
             num = self.parent.cat.cat['meta/num'][0]
         meta = self.parent.cat.cat['meta/qso'][:]
 
@@ -93,28 +91,20 @@ class dla_data(data_structure):
                     if i * 10 % num == 0:
                         print(i, ' of ', num)
                     s = self.parent.cat[i]
-                    specs, loglams, inds, dla_flags, dla_pos, NHI = [], [], [], [], [], []
+                    specs, reds, inds, flags, pos, logN = [], [], [], [], [], []
                     # print('dla', meta[i]['dla'])
                     if meta[i]['dla']:
                         self.parent.cat.open()
-                        sdss_name1 = 'data/{0:05d}/{1:04d}/{2:05d}/'.format(meta[i]['PLATE'], meta[i]['FIBERID'],
-                                                                            meta[i]['MJD'])
-                        sdss_name2 = 'data/{0:05d}_{1:05d}_{2:04d}/'.format(meta[i]['PLATE'], meta[i]['MJD'],
-                                                                            meta[i]['FIBERID'])
+                        sdss_name1 = 'data/{0:05d}/{1:04d}/{2:05d}/'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])
+                        sdss_name2 = 'data/{0:05d}_{1:05d}_{2:04d}/'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
                         # print(sdss_name2)
                         if sdss_name1 in self.parent.cat.cat:
-                            dlas = self.parent.cat.cat[
-                                       'meta/{0:05d}/{1:04d}/{2:05d}/dla'.format(meta[i]['PLATE'], meta[i]['FIBERID'],
-                                                                                 meta[i]['MJD'])][:]
+                            dlas = self.parent.cat.cat['meta/{0:05d}/{1:04d}/{2:05d}/dla'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])][:]
                         elif sdss_name2 in self.parent.cat.cat:
-                            dlas = self.parent.cat.cat[
-                                       'meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'],
-                                                                                 meta[i]['FIBERID'])][:]
+                            dlas = self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
                             # dlas = sdss.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
                         else:
-                            print('meta/{0:05d}/{1:05d}/{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'],
-                                                                            meta[i]['FIBERID']),
-                                  ' vaporized in history')
+                            print('meta/{0:05d}/{1:05d}/{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID']), ' vaporized in history')
                         self.parent.cat.close()
                     else:
                         dlas = []
@@ -132,29 +122,29 @@ class dla_data(data_structure):
                         specs = as_strided(np.pad(flux, (max(0, int(self.window / 2) - im[0]), np.abs(min(0, len(s['flux']) - im[-1] - int(self.window / 2)))),
                                                   'constant', constant_values=(np.quantile(flux[:50], 0.75), np.quantile(flux[-50:], 0.75))),
                                            shape=[im[-1] - im[0], self.window], strides=[stride, stride])[mask[im[0]:im[-1]]]
-                        loglams = s['loglam'][mask]
-                        inds = np.ones(len(loglams), dtype=int) * i
-                        dla_flag = mask_dla[mask]
-                        dla_pos = np.zeros_like(loglams)
-                        dla_NHI = np.zeros_like(loglams)
-                        if np.sum(dla_flag) > 0:
+                        reds = 10 ** s['loglam'][mask] / self.parent.lya - 1
+                        inds = np.ones(len(reds), dtype=int) * i
+                        flag = mask_dla[mask]
+                        pos = np.zeros_like(reds)
+                        logN = np.zeros_like(reds)
+                        if np.sum(flag) > 0:
                             dind = np.argmin(np.abs(np.subtract(dlas['z_abs'][:, np.newaxis], (10 ** s['loglam'][mask_dla] / self.parent.lya - 1))), axis=0)
-                            dla_pos[dla_flag] = np.subtract(s['loglam'][mask_dla], np.log10((dlas['z_abs'][dind] + 1) * self.parent.lya)) * 1e4
-                            dla_NHI[dla_flag] = dlas['NHI'][dind]
+                            pos[flag] = np.subtract(s['loglam'][mask_dla], np.log10((dlas['z_abs'][dind] + 1) * self.parent.lya)) * 1e4
+                            logN[flag] = dlas['NHI'][dind]
 
                         if ind == None:
-                            self.append(dset='full', specs=specs, loglams=loglams, inds=inds, flag=dla_flag, pos=dla_pos, logN=dla_NHI)
+                            self.append(dset='full', specs=specs, reds=reds, inds=inds, flag=flag, pos=pos, logN=logN)
 
                             if np.random.random() > valid:
-                                m = np.append(np.random.choice(np.arange(len(loglams))[~dla_flag], int(sum(~dla_flag) * (1 - dropout)), replace=False),
-                                              np.random.choice(np.arange(len(loglams))[dla_flag], int(sum(dla_flag) * (1 - dropout_dla)), replace=False))
+                                m = np.append(np.random.choice(np.arange(len(reds))[~flag], int(sum(~flag) * (1 - dropout)), replace=False),
+                                              np.random.choice(np.arange(len(reds))[flag], int(sum(flag) * (1 - dropout_dla)), replace=False))
                                 # print(m)
                                 if len(m) > 1:
-                                    self.append(dset='train', specs=specs[m], loglams=loglams[m], inds=inds[m], flag=dla_flag[m], pos=dla_pos[m], logN=dla_NHI[m])
+                                    self.append(dset='train', specs=specs[m], reds=reds[m], inds=inds[m], flag=flag[m], pos=pos[m], logN=logN[m])
                             else:
-                                self.append(dset='valid', specs=specs, loglams=loglams, inds=inds, flag=dla_flag, pos=dla_pos, logN=dla_NHI)
+                                self.append(dset='valid', specs=specs, reds=reds, inds=inds, flag=flag, pos=pos, logN=logN)
                         else:
-                            return specs, loglams, dla_flag, dla_pos, dla_NHI, inds
+                            return specs, reds, flag, pos, logN, inds
 
     def plot_spec(self, ind, add_info=True):
         """
@@ -179,7 +169,7 @@ class dla_data(data_structure):
                 fig, ax = plt.subplots(figsize=(14, 5), dpi=160)
             if add_info:
                 m = self.get('inds') == ind
-                x = 10 ** self.get('loglams')[m]
+                x = (self.get('reds')[m] + 1) * self.parent.lya
                 # print(sdss.cat['meta/{0:05d}_{1:04d}_{2:05d}/dla'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:].dtype)
                 # pos = x[np.where((dla_pos[m] == 0) * dla_flags[m])[0][0]] if any(dla_flags[m]) else 0
                 dla_flag, dla_pos, dla_NHI = self.get('flag')[m], self.get('pos')[m], self.get('logN')[m]
@@ -247,12 +237,12 @@ class dla_data(data_structure):
             fig, ax = self.plot_spec(ind, add_info=True)
         else:
             ax = fig.get_axes()
-        specs, loglams, *other = self.get_spec(ind)
+        specs, reds, *other = self.get_spec(ind)
 
         if self.parent.cnn != None:
             preds = self.parent.cnn.model.predict(specs)
 
-            x = np.power(10, loglams)
+            x = (1 + reds) * self.parent.lya
             fig.axes[0].plot(x, preds[0], '--k')
             fig.axes[1].plot(x, preds[1], '--k')
             fig.axes[2].plot(x, preds[2], '--k')
@@ -266,7 +256,7 @@ class dla_data(data_structure):
             - ind       :  index of the spectrum
             - plot      :  plot intermediate results
         """
-        specs, loglams, *other = self.get_spec(ind)
+        specs, reds, *other = self.get_spec(ind)
 
         dla = []
         if self.parent.cnn != None:
@@ -274,7 +264,7 @@ class dla_data(data_structure):
 
             m = (preds[0] > 0.2).flatten()
             if sum(m) > 3:
-                zd = 10 ** (loglams[m] - preds[1].flatten()[m] * 1e-4) / self.parent.lya - 1
+                zd = (1 + reds[m]) * 10 ** (preds[1].flatten()[m] * 1e-4) - 1
                 z = distr1d(zd, bandwidth=0.7)
                 z.stats()
                 if plot:
