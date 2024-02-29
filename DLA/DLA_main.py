@@ -124,10 +124,10 @@ class CNN_dla(CNN):
         Calculate simple statistical measure of the validation sample of the CNN DLA model. This uses only raw spectral data structure, and does not consider DLA catalogs.
         """
         self.d.open()
-        labels_valid = np.stack((self.d.get('dla_flag', dset='valid')[:], self.d.get('dla_pos', dset='valid')[:], self.d.get('dla_NHI', dset='valid')[:]), axis=-1)
+        labels_valid = np.stack((self.d.get('flag', dset='valid')[:], self.d.get('pos', dset='valid')[:], self.d.get('logN', dset='valid')[:]), axis=-1)
         score = self.cnn.model.evaluate(self.d.get('specs', dset='valid'), {'ide': labels_valid, 'red': labels_valid, 'col': labels_valid})
         print(f'Test loss valid any: {score[0]}')
-        m = self.d.get('dla_flag', dset='valid') == 1
+        m = self.d.get('flag', dset='valid') == 1
         score = self.cnn.model.evaluate(self.d.get('specs', dset='valid')[m], {'ide': labels_valid[m, :], 'red': labels_valid[m, :], 'col': labels_valid[m]})
         print(f'Test loss valid DLA: {score[0]}')
 
@@ -215,6 +215,7 @@ class CNN_dla(CNN):
             print(stat['corr'][0])
             print(stat['fp'][0])
             print(stat['fn'][0])
+
         if 'number_count_total' in kind:
             print("Total number count statistics:")
             print('Ntotal  Nfp  Nfn  f_fp  f_np')

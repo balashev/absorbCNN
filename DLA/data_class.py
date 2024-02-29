@@ -475,7 +475,7 @@ class dla_data(list):
             - ind       :  index of the spectrum
             - plot      :  plot intermediate results
         """
-        specs, loglams, *other = self.get_spec(ind)
+        specs, reds, *other = self.get_spec(ind)
 
         dla = []
         if self.parent.cnn != None:
@@ -483,7 +483,7 @@ class dla_data(list):
 
             m = (preds[0] > 0.2).flatten()
             if sum(m) > 3:
-                zd = 10 ** (loglams[m] - preds[1].flatten()[m] * 1e-4) / self.parent.lya - 1
+                zd = reds[m]
                 z = distr1d(zd, bandwidth=0.7)
                 z.stats()
                 if plot:
