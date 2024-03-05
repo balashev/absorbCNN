@@ -150,13 +150,14 @@ class catalog(list):
         self.cat['meta/qso']['dla'] = d
         self.close()
 
-    def append(self, num=None, source='web'):
+    def append(self, skip=0, num=None, source='web'):
         """
         append the spectra of the catalog from the source (website or local file) and store it in hdf5 file in <data/> dataset
         check if spectrum is alaredy in catalog
         stored missing files in <missed.dat>
         parameters:
-            - num      :  number of spectra
+            - skip     :  number of spectra to skip
+            - num      :  number of spectra to load
             - source   :  the path to file where SDSS spectra are located. If =='web' than the data will be downloaded from SDSS website (this is quite slow).
         """
         #print(source)
@@ -166,11 +167,11 @@ class catalog(list):
             sdss = h5py.File(source, 'r')
 
         if num == None:
-            num = len(self.cat['meta/qso'])
+            num = len(self.cat['meta/qso']) - skip
         if 'meta/num' not in self.cat:
             self.cat.create_dataset('meta/num', data=[0])
 
-        for i, q in enumerate(self.cat['meta/qso'][:num]):
+        for i, q in enumerate(self.cat['meta/qso'][skip:num+skip]):
             name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBERID'])
             #print(name)
             if name not in self.cat:
