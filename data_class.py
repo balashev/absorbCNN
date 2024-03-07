@@ -219,11 +219,11 @@ class data_structure(list):
     def check_corr(self, plate, mjd, fiberid):
         return any([(b[0]== plate) * (b[1] == mjd) for b in self.corr])
 
-    def get_inds(self, dla=False, dset='full'):
+    def get_inds(self, flag=False, dset='full'):
         """
         Get indixes of the spectra from the data strucutre
         """
-        if dla:
+        if flag:
             return np.unique(self.get('inds', dset=dset)[self.get('flag', dset=dset) == 1])
         else:
             return np.unique(self.get('inds', dset=dset))

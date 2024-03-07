@@ -315,7 +315,7 @@ class catalog(list):
             print(z_H2, logN)
             plt.plot(10 ** x[m], y[m])
         y = y * f + err * (1 - f) * np.random.randn(len(x)) / 2
-        y = f
+        #y = f
         y[np.logical_not(np.isfinite(y))] = np.nanmedian(y)
         self.cat[name + '/flux'][...] = y
 
