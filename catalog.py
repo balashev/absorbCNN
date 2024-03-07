@@ -169,7 +169,7 @@ class catalog(list):
         if num == None:
             num = len(self.cat['meta/qso']) - skip
         if 'meta/num' not in self.cat:
-            self.cat.create_dataset('meta/num', data=[0])
+            self.cat.create_dataset('meta/num', data=[skip])
 
         for i, q in enumerate(self.cat['meta/qso'][skip:num+skip]):
             name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBERID'])
@@ -190,7 +190,7 @@ class catalog(list):
                     #try:
 
                 if res:
-                    self.cat['meta/num'][0] =  [self.cat['meta/num'][0] + 1] if 'meta/num' in self.cat else [1]
+                    self.cat['meta/num'][0] =  [self.cat['meta/num'][0] + 1] if 'meta/num' in self.cat else [skip+1]
                 else:
                     print('missed: {0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))
                     self.missed.write('{0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))
