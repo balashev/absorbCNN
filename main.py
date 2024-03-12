@@ -71,7 +71,7 @@ class CNN():
             self.cat.create(catalog_filename=self.sdss_cat_file, output_filename=self.catalog_filename)
             # sdss.append(num=num_specs, source='/mnt/c/science/dr14.hdf5')
             if num > 0:
-                self.cat.make_H2_mock(num=num, source=self.sdss_source, dla_cat=self.dla_cat_file)
+                self.cat.make_H2_mock(num=num, source=self.sdss_source, dla_cat=self.dla_cat_file, lines_file=self.lines_file, energy_file=self.energy_file)
             else:
                 print('the number of spectra to create is not provided')
         self.cat.close()
