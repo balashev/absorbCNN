@@ -25,6 +25,8 @@
 *.log
 *.sql
 *.sqlite
+*.hdf5
+*.dat
 
 # OS generated files #
 ######################
@@ -44,4 +46,5 @@ Thumbs.db
 *.ipynb
 
 # Special file
-
+/temp/*
+/h2_temp/*

@@ -12,18 +12,19 @@ class h2_data(data_structure):
     The individual record is one dimensional spectra region of the size <window> that also possess certain label of DLA (identification, position and column density)
     The datastructure is stored in hdf5 file given by <filename>.
     """
-    def __init__(self, parent, window=64, bands=6, timing=False, filename='data_H2.hdf5'):
+    def __init__(self, parent, window=64, bands=6, timing=False, filename='data_H2.hdf5', lines_file=None, energy_file=None):
         """
         parameters:
             - window         :  the size of the spectral window in pixels
             - timing         :  use Timer to check the calculation time (for debug)
             - filename       :  the filename of hdf5 file where the data will be stored
+            - lines_file     :  H2_lines.dat
         """
         super(h2_data, self).__init__(parent, timing=False, filename='data_H2.hdf5')
         self.window = window
         self.bands = bands
         self.shape = (self.window, self.bands)
-        self.h2 = H2abs()
+        self.h2 = H2abs(lines_file, energy_file)
         self.h2bands = self.h2.get_bands(self.bands)
 
     def make_mask(self, ind, z_qso=0):

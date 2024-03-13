@@ -122,19 +122,23 @@ class H2abs():
         kinetic temperature <T>,
         and type of higher rotational level excitation specified by <exc> - can be ['low', 'mid', 'high']
     """
-    def __init__(self):
-        self.read_data()
+    def __init__(self, lines_file=None, energy_file=None):
+        self.read_data(lines_file, energy_file)
 
-    def read_data(self):
+    def read_data(self, lines_file, energy_file):
         """
         read the atomic data for the H2 stored in H2_lines.dat and H2_energy_X.dat files
         """
         folder = os.path.dirname(os.path.abspath(__file__))
+        if lines_file is None:
+            lines_file=folder + '/data/H2_lines.dat'
+        if energy_file is None:
+            energy_file=folder + '/data/H2_energy_X.dat'
         print('import', folder)
-        self.data = np.genfromtxt(folder + '/data/H2_lines.dat', names=True,
+        self.data = np.genfromtxt(lines_file, names=True,
                                   dtype=[('band', 'U1'), ('name', 'U6'), ('vl', '<i8'), ('jl', '<i8'), ('vu', '<i8'),
                                          ('ju', '<i8'), ('lambda', '<f8'), ('f', '<f8'), ('g', '<f8')])
-        self.energy = np.genfromtxt(folder + '/data/H2_energy_X.dat', skip_header=2, names=True, comments='#')
+        self.energy = np.genfromtxt(energy_file, skip_header=2, names=True, comments='#')
         self.energy['E'] *= 1.438777  # energy levels in K
 
     def mask(self, **kwargs):

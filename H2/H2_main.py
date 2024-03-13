@@ -26,7 +26,7 @@ class CNN_h2(CNN):
         if bands != None:
             self.bands = bands
 
-        self.d = h2_data(self, window=self.window, bands=self.bands, timing=False, filename=self.catalog_filename.replace('.hdf5', '_dla_data.hdf5'))
+        self.d = h2_data(self, window=self.window, bands=self.bands, timing=False, filename=self.catalog_filename.replace('.hdf5', '_dla_data.hdf5'), lines_file=self.lines_file, energy_file=self.energy_file)
 
         if action == 'new':
             self.d.new()
