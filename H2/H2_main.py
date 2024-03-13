@@ -6,6 +6,7 @@ from .H2_conv_model import CNN_for_H2
 class CNN_h2(CNN):
     def __init__(self, **kwargs):
         super(CNN_h2, self).__init__(**kwargs)
+        self.cnn = CNN_for_H2()
 
     def h2_prepare_data(self, action, num=0, window=None, bands=None, valid=0.2, dropout=0.5, dropout_dla=0.1, start=0):
         """
@@ -50,8 +51,6 @@ class CNN_h2(CNN):
         """
         if h2_model_filename != None:
             self.h2_model_filename = h2_model_filename
-
-        self.cnn = CNN_for_H2()
 
         self.d.open()
         if action == 'run':
