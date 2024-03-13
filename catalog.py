@@ -315,7 +315,7 @@ class catalog(list):
             print(z_H2, logN)
             plt.plot(10 ** x[m], y[m])
         y = y * f + err * (1 - f) * np.random.randn(len(x)) / 2
-        y = f
+        #y = f
         y[np.logical_not(np.isfinite(y))] = np.nanmedian(y)
         self.cat[name + '/flux'][...] = y
 
@@ -325,7 +325,7 @@ class catalog(list):
 
         return z_H2, logN
 
-    def make_H2_mock(self, num=None, source='web', dla_cat=None, lines_file=None, energy_file=None):
+    def make_H2_mock(self, num=None, source='web', dla_cat=None):
         """
         append the spectra of the catalog from the source (website or local file) and store it in hdf5 file in <data/> dataset
         check if spectrum is alaredy in catalog
@@ -348,7 +348,7 @@ class catalog(list):
         d = np.zeros(num)
         mask = np.zeros(len(self.cat['meta/qso'][:]), dtype=bool)
         n = 0
-        self.H2 = H2abs(lines_file, energy_file)
+        self.H2 = H2abs()
         for i, q in enumerate(self.cat['meta/qso'][:]):
             name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBERID'])
             if name not in self.cat:

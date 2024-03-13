@@ -12,19 +12,18 @@ class h2_data(data_structure):
     The individual record is one dimensional spectra region of the size <window> that also possess certain label of DLA (identification, position and column density)
     The datastructure is stored in hdf5 file given by <filename>.
     """
-    def __init__(self, parent, window=64, bands=6, timing=False, filename='data_H2.hdf5', lines_file=None, energy_file=None):
+    def __init__(self, parent, window=64, bands=6, timing=False, filename='data_H2.hdf5'):
         """
         parameters:
             - window         :  the size of the spectral window in pixels
             - timing         :  use Timer to check the calculation time (for debug)
             - filename       :  the filename of hdf5 file where the data will be stored
-            - lines_file     :  H2_lines.dat
         """
         super(h2_data, self).__init__(parent, timing=False, filename='data_H2.hdf5')
         self.window = window
         self.bands = bands
         self.shape = (self.window, self.bands)
-        self.h2 = H2abs(lines_file, energy_file)
+        self.h2 = H2abs()
         self.h2bands = self.h2.get_bands(self.bands)
 
     def make_mask(self, ind, z_qso=0):
@@ -105,7 +104,7 @@ class h2_data(data_structure):
                             num = int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_max)) - s['loglam'][0]) * 1e4 + self.window / 2)) - int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_min)) - s['loglam'][0]) * 1e4 - self.window / 2))
                             for band, l in self.h2bands.items():
                                 #print(band, l)
-                                i_max = int(np.trunc((np.log10(l * (1 + z_max)) - s['loglam'][0]) * 1e4 + self.window / 2))
+                                i_max = int(np.trunc((np.log10(l * (1 + z_max)) - s['loglam'][0]) * 1e4 - self.window / 2))
                                 i_min = i_max - num
                                 #print(i_min, i_max, i_max - i_min)
                                 stride = s['flux'].strides[0]
@@ -134,7 +133,6 @@ class h2_data(data_structure):
 
                             if len(h2) > 0:
                                 m = (reds < (1 + h2['z_abs']) * 10 ** (self.window / 4 * 1e-4) - 1) * (reds > (1 + h2['z_abs']) * 10 ** (-self.window / 4 * 1e-4) - 1)
-                                print(np.sum(m))
                                 flag[m] = np.ones(np.sum(m))
                                 pos[m] = np.trunc(np.log10((1 + reds[m]) / (1 + h2['z_abs'])) * 1e4)
                                 logN[m] = h2['logN']
@@ -155,7 +153,11 @@ class h2_data(data_structure):
                                 return specs, reds, flag, pos, logN, inds
 
 
-    def plot_data(self, ind, pos, specs=None):
+    def plot_data(self, ind, specs=None):
+        if specs == None:
+            specs, reds, flag, pos, logN, inds = self.make(ind=ind)
+            i = np.argmin(np.abs(reds - reds[flag][10]))
+            pos = i - pos[flag][10] + 15
         fig, ax = plt.subplots(nrows=self.bands+1, figsize=(12, 2 * self.bands + 6))
         for k in range(self.bands):
             ax[k].step(np.arange(specs.shape[1]), specs[pos, :, k], where='mid', color='k')
@@ -196,29 +198,24 @@ class h2_data(data_structure):
                 x = (1 + self.get('reds')[m]) * self.h2bands['L0-0']
                 # print(sdss.cat['meta/{0:05d}_{1:04d}_{2:05d}/dla'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:].dtype)
                 # pos = x[np.where((dla_pos[m] == 0) * dla_flags[m])[0][0]] if any(dla_flags[m]) else 0
-                dla_flag, dla_pos, dla_NHI = self.get('flag')[m], self.get('pos')[m], self.get('logN')[m]
-                pos = x[np.where(dla_flag == 1)[0][0]] * 10 ** (
-                            -dla_pos[np.where(dla_flag == 1)[0][0]] * 0.0001) if any(dla_flag) else 0
-                for l, y, mask, c, title in zip(range(3), [dla_flag, dla_pos, dla_NHI],
-                                                [dla_flag > -1, dla_flag > -1, dla_NHI[dla_flag > -1] > 0],
+                flag, pos, logN = self.get('flag')[m], self.get('pos')[m], self.get('logN')[m]
+                pos = x[np.where(flag == 1)[0][0]] * 10 ** (-pos[np.where(flag == 1)[0][0]] * 0.0001) if any(flag) else 0
+                for l, y, mask, c, title in zip(range(3), [flag, pos, logN],
+                                                [flag > -1, flag > -1, logN[flag > -1] > 0],
                                                 ['tomato', 'dodgerblue', 'forestgreen'],
                                                 ["DLA flag", "DLA pos", "DLA N_HI"]):
                     axs[l].plot(x[mask], y[mask], 'o', c=c)
                     axs[l].text(0.02, 0.9, title, color=c, ha='left', va='top', transform=axs[l].transAxes, zorder=3)
                     axs[l].set_xlim(xlims)
-                    if any(dla_flag):
-                        for z in self.parent.cat.cat[
-                                     'meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta['PLATE'], meta['MJD'],
-                                                                               meta['FIBERID'])][:]['z_abs']:
+                    if any(flag):
+                        for z in self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:]['z_abs']:
                             axs[l].axvline(self.parent.lya * (1 + z), ls='--', color='tomato')
                 axs[1].axhline(0, ls='--', color='k', lw=0.5)
                 ax = axs[3]
-                if any(dla_flag):
+                if any(flag):
                     # meta/{0:05d}_{1:04d}_{2:05d}/ 05 05 04
                     # data/{0:05d}/{1:04d}/{2:05d}/ 05 04 05
-                    for z in self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta['PLATE'], meta['MJD'],
-                                                                                           meta['FIBERID'])][:][
-                        'z_abs']:
+                    for z in self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:]['z_abs']:
                         ax.axvline(self.parent.lya * (1 + z), ls='--', color='tomato')
                         ax.axvline(self.parent.lyb * (1 + z), ls=':', color='violet')
             ax.plot(10 ** s['loglam'][:i + 200], s['flux'][:i + 200], 'k')
