@@ -55,7 +55,7 @@ class CNN_h2(CNN):
         self.d.open()
         if action == 'run':
             labels = np.stack((self.d.get('flag', dset='train'), self.d.get('pos', dset='train'), self.d.get('logN', dset='train')), axis=-1)
-            history = self.cnn.model.fit(self.d.get('specs', dset='train'), {'ide': labels, 'red': labels, 'col': labels},
+            history = self.cnn.model.fit(self.d.get('specs', dset='train'), {'ide': labels},
                                 epochs=epochs, batch_size=700, shuffle=False)
             self.cnn.model.save(self.h2_model_filename)
 
@@ -75,6 +75,20 @@ class CNN_h2(CNN):
 
         if stats:
             self.cnn.h2_simple_stats()
+
+    def h2_simple_stats(self):
+        """
+        Calculate simple statistical measure of the validation sample of the H2 DLA model. This uses only raw spectral data structure, and does not consider H2 catalogs.
+        """
+        self.d.open()
+        labels_valid = np.stack((self.d.get('flag', dset='valid')[:], self.d.get('pos', dset='valid')[:], self.d.get('logN', dset='valid')[:]), axis=-1)
+        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid'), {'ide': labels_valid})
+        # print(f'Test loss valid any: {score[0]}')
+        print(f'Test loss valid any: {score}')
+        m = self.d.get('flag', dset='valid') == 1
+        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid')[m], {'ide': labels_valid[m, :]})
+        print(f'Test loss valid H2: {score}')
+        # print(f'Test loss valid DLA: {score[0]}')
 
     def h2_plot_spec(self, ind, preds=False):
         """
