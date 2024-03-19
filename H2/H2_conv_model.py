@@ -8,7 +8,8 @@ class CNN_for_H2():
         self.model = Model(inputs=adapter.inputs, outputs=adapter.outputs)
         self.model.compile(optimizer=optimizers.Adam(learning_rate=0.001),
                            loss={'ide': adapter.ide_loss},
-                           loss_weights=[1])
+                           loss_weights=[1], metrics={'ide': [adapter.BinaryFalsePositives(),
+                                                              adapter.BinaryFalseNegatives()]})
 
 class Model_adapter:
     zero = tf.convert_to_tensor(0.0, dtype=tf.float32)
@@ -18,12 +19,17 @@ class Model_adapter:
 
     def __init__(self):
         self.inputs = Input(shape=(64, 6, 1), name='input')
-        x = layers.Conv2D(64, (5, 1), input_shape=(64, 6, 1), activation='relu')(self.inputs)
-        x = layers.MaxPooling2D()(x)
-        x = layers.Conv2D(64, (5, 1), activation='relu')(x)
-        x = layers.MaxPooling2D()(x)
+        x = layers.Conv2D(32, (12, 1), input_shape=(64, 6, 1), activation='relu')(self.inputs)
+        # x = layers.Dropout(0.02)(x)
+        x = layers.MaxPooling2D(pool_size=3)(x)
+        x = layers.Conv2D(64, (6, 1), activation='relu')(x)
+        # x = layers.Dropout(0.02)(x)
+        x = layers.MaxPooling2D(pool_size=2)(x)
+        x = layers.Conv2D(64, (6, 1), activation='relu')(x)
+        # x = layers.Dropout(0.02)(x)
         x = layers.Flatten()(x)
         x = layers.Dense(64)(x)
+        # x = layers.Dropout(0.02)(x)
         ide = layers.Dense(1, activation='sigmoid', name='ide')(x)
         self.outputs = [ide]
 
