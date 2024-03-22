@@ -1,8 +1,10 @@
 import numpy as np
+import pickle
 
 from ..main import CNN
 from .H2_data_class import h2_data
 from .H2_conv_model import CNN_for_H2
+
 class CNN_h2(CNN):
     def __init__(self, **kwargs):
         super(CNN_h2, self).__init__(**kwargs)
@@ -27,7 +29,7 @@ class CNN_h2(CNN):
         if bands != None:
             self.bands = bands
 
-        self.d = h2_data(self, window=self.window, bands=self.bands, timing=False, filename=self.catalog_filename.replace('.hdf5', '_dla_data.hdf5'), lines_file=self.lines_file, energy_file=self.energy_file)
+        self.d = h2_data(self, window=self.window, bands=self.bands, timing=False, filename=self.catalog_filename.replace('.hdf5', '_dla_data.hdf5'))
 
         if action == 'new':
             self.d.new()
@@ -55,7 +57,7 @@ class CNN_h2(CNN):
         self.d.open()
         if action == 'run':
             labels = np.stack((self.d.get('flag', dset='train'), self.d.get('pos', dset='train'), self.d.get('logN', dset='train')), axis=-1)
-            history = self.cnn.model.fit(self.d.get('specs', dset='train'), {'ide': labels},
+            history = self.cnn.model.fit(self.d.get('specs', dset='train'), {'ide': labels, 'red': labels},
                                 epochs=epochs, batch_size=700, shuffle=False)
             self.cnn.model.save(self.h2_model_filename)
 
@@ -82,11 +84,11 @@ class CNN_h2(CNN):
         """
         self.d.open()
         labels_valid = np.stack((self.d.get('flag', dset='valid')[:], self.d.get('pos', dset='valid')[:], self.d.get('logN', dset='valid')[:]), axis=-1)
-        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid'), {'ide': labels_valid})
+        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid'), {'ide': labels_valid, 'red': labels_valid})
         # print(f'Test loss valid any: {score[0]}')
         print(f'Test loss valid any: {score}')
         m = self.d.get('flag', dset='valid') == 1
-        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid')[m], {'ide': labels_valid[m, :]})
+        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid')[m], {'ide': labels_valid[m, :], 'red': labels_valid[m, :]})
         print(f'Test loss valid H2: {score}')
         # print(f'Test loss valid DLA: {score[0]}')
 
@@ -95,10 +97,116 @@ class CNN_h2(CNN):
         Plot SDSS spectrum regarding DLA search. This includes info from data structure for DLA search
         parameters:
             - ind        :   number of the spectrum to plot
-            - preds      :   if True, plot the predicition of the CNN model
+            - preds      :   if True, plot the prediction of the CNN model
         """
-        fig, ax = self.d.plot_spec(ind, add_info=False)
+        fig, ax = self.d.plot_spec(ind, add_info=True)
         if preds:
             fig, ax = self.d.plot_preds(ind, fig=fig)
 
         return fig, ax
+
+    def h2_get_from_CNN(self, ind=None):
+        """
+        Get the DLAs from the SDSS spectrum set by <ind> using DLA CNN model
+        parameters:
+            - ind        :   number of the spectrum to use
+        """
+        if ind != None:
+            self.d.get_h2_from_CNN(ind)
+
+    def h2_make_catalog(self, action, dset='valid'):
+        """
+        Make the catalog of DLAs from the SDSS spectrum set by <ind> using DLA CNN model. The catalog is saved in/read from <self.catalog_filename>_dla_<dset>.pickle
+        parameters:
+            - action     :   the action to do. Can be 'run' to run, or 'load' for already created catalog.
+            - dset       :   dataset to use. Can be 'valid' ot 'train'
+        """
+        if action == 'run':
+            dla = []
+            for ind in self.d.get_inds(dset=dset):
+                res = self.d.get_abs_from_CNN(ind, plot=True)
+                print(ind, res)
+                if len(res) > 0:
+                    # plot_preds(ind, d=d, model=model, sdss=sdss)
+                    dla.extend(res)
+            # print(dla)
+            with open(self.catalog_filename.replace('.hdf5', f'_h2_{dset}.pickle'), 'wb') as f:
+                pickle.dump(dla, f)
+        elif action == 'load':
+            with open(self.catalog_filename.replace('.hdf5', f'_h2_{dset}.pickle'), 'rb') as f:
+                dla = pickle.load(f)
+
+        return dla
+            # print(len(dla))
+
+    def h2_catalog_stats(self, kind=['number_count_total', 'number_count_cols', 'number_count_redshifts', 'compare_cols']):
+        """
+        Calculate different statistics of the false positives/negatives, results of the CNN, etc
+        by comparing validation and initial DLA catalogs.
+        """
+        dla = self.h2_make_catalog('load', dset='valid')
+        inds = [x[0] for x in dla]
+        stat = {}
+        for attr in ['corr', 'fp', 'fn']:
+            stat[attr] = []
+
+        self.cat.open()
+        q = self.cat.cat['meta/qso'][...]
+
+        for ind in self.d.get_inds(dset='valid')[:]:
+            #print(ind, q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
+            name = 'meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
+            if name in self.cat.cat:
+                real = self.cat.cat[name][...]
+                #print(ind, real)
+                for r in real:
+                    fn = True
+                    for i in np.where(ind == inds)[0]:
+                        # print(dla[i])
+                        if (r['z_abs'] > dla[i][2] - np.sqrt((2 * dla[i][3]) ** 2 + 0.02 ** 2)) and (r['z_abs'] < dla[i][2] + np.sqrt((2 * dla[i][4]) ** 2 + 0.02 ** 2)):
+                            stat['corr'].append(dla[i] + [real['z_abs'][0], real['logN'][0]])
+                            fn = False
+                        else:
+                            stat['fp'].append(dla[i] + [real['z_abs'][0], real['logN'][0]])
+                            # plot_preds(ind, d=d, model=model, sdss=sdss)
+                    if fn:
+                        stat['fn'].append([ind, real['z_abs'][0], real['logN'][0]])
+                        # plot_preds(ind, d=d, model=model, sdss=sdss)
+        if 0:
+            print(stat['corr'][0])
+            print(stat['fp'][0])
+            print(stat['fn'][0])
+
+        if 'number_count_total' in kind:
+            print("Total number count statistics:")
+            print('Ntotal  Nfp  Nfn  f_fp  f_np')
+            print(len(stat['corr']), len(stat['fp']), len(stat['fn']), len(stat['fp']) / len(stat['corr']), len(stat['fn']) / len(stat['corr']))
+
+        if 'number_count_cols' in kind:
+            print("Number count statistics by column density:")
+            n = np.linspace(19.5, 22.5, 7)
+            print('N_l  N_r  Ntotal  Nfp  Nfn  f_fp  f_np')
+            for i in range(len(n) - 1):
+                cor = [s for s in stat['corr'] if (s[9] > n[i]) * (s[9] < n[i + 1])]
+                pos = [s for s in stat['fp'] if (s[5] > n[i]) * (s[5] < n[i + 1])]
+                neg = [s for s in stat['fn'] if (s[2] > n[i]) * (s[2] < n[i + 1])]
+                if len(cor) > 0:
+                    print(n[i], n[i + 1], len(cor), len(pos), len(neg), len(pos) / len(cor), len(neg) / len(cor))
+
+        if 'number_count_redshifts' in kind:
+            print("Number count statistics by redshifts:")
+            z = np.linspace(2., 5, 7)
+            print('z_l  z_r  Ntotal  Nfp  Nfn  f_fp  f_np')
+            for i in range(len(n) - 1):
+                cor = [s for s in stat['corr'] if (s[8] > z[i]) * (s[8] < z[i + 1])]
+                pos = [s for s in stat['fp'] if (s[2] > z[i]) * (s[2] < z[i + 1])]
+                neg = [s for s in stat['fn'] if (s[1] > z[i]) * (s[1] < z[i + 1])]
+                if len(cor) > 0:
+                    print(z[i], z[i + 1], len(cor), len(pos), len(neg), len(pos) / len(cor), len(neg) / len(cor))
+
+        if 'compare_cols' in kind:
+            fig, ax = plt.subplots()
+            ax.plot([s[9] for s in stat['corr']], [s[5] for s in stat['corr']], '+')
+            plt.show()
+
+        return stat

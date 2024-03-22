@@ -305,7 +305,7 @@ class catalog(list):
         imin, imax = max(x[0], np.log10(self.parent.lyc * (1 + z_qso))), min(x[-1], np.log10(H2cutoff * (1 + z_qso) * (1 - 2e3 / 3e5)))
         z_H2 = 10 ** (np.random.randint(int(imin * 1e4), int(imax * 1e4)) / 1e4) / H2cutoff - 1
         logN = 19 + np.random.rand() ** 2 * 3
-        z_H2, logN = z_qso - 0.1, 20.5
+        z_H2, logN = z_qso - 0.1, 21.0
         x1, f = self.H2.calc_profile(x=10**x, z=z_H2, logN=logN, b=5, j=6, T=100, exc='low')
         f = convolve_res(x1, f, 1800)
         if debug:
@@ -325,7 +325,7 @@ class catalog(list):
 
         return z_H2, logN
 
-    def make_H2_mock(self, num=None, source='web', dla_cat=None, lines_file=None, energy_file=None):
+    def make_H2_mock(self, num=None, source='web', dla_cat=None, snr=2):
         """
         append the spectra of the catalog from the source (website or local file) and store it in hdf5 file in <data/> dataset
         check if spectrum is alaredy in catalog
@@ -348,7 +348,7 @@ class catalog(list):
         d = np.zeros(num)
         mask = np.zeros(len(self.cat['meta/qso'][:]), dtype=bool)
         n = 0
-        self.H2 = H2abs(lines_file, energy_file)
+        self.H2 = H2abs()
         for i, q in enumerate(self.cat['meta/qso'][:]):
             name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBERID'])
             if name not in self.cat:
@@ -356,7 +356,12 @@ class catalog(list):
                 sdss_name = 'data/{0:05d}/{1:04d}/{2:05d}/'.format(q['PLATE'], q['FIBERID'], q['MJD'])
                 if sdss_name not in sdss:
                     sdss_name = 'data/{0:05d}_{1:05d}_{2:04d}/'.format(q['PLATE'], q['MJD'], q['FIBERID'])
-                res = (sdss_name in sdss) and (len(sdss[sdss_name + 'loglam'][:]) > 100) and (self.cat['meta/qso'][i]['Z'] > 10 ** sdss[sdss_name + 'loglam'][:][100] / self.parent.H2bands['L2-0'] / (1 - 2e3 / 3e5) - 1)
+                res = (sdss_name in sdss) and (len(sdss[sdss_name + 'loglam'][:]) > 100) and (self.cat['meta/qso'][i]['Z'] > 10 ** sdss[sdss_name + 'loglam'][:][100] / self.parent.H2bands['L5-0'] / (1 - 2e3 / 3e5) - 1)
+                if res:
+                    m = ((10 ** sdss[sdss_name + 'loglam'][:] / (1 + self.cat['meta/qso'][i]['Z'])) > 1020) * ((10 ** sdss[sdss_name + 'loglam'][:] / (1 + self.cat['meta/qso'][i]['Z'])) < 1215)
+                    #print(np.sum(m))
+                    #print(np.mean(sdss[sdss_name + 'flux'][m] / (np.sqrt( 1 / sdss[sdss_name + 'ivar'][m]))) > snr)
+                    res *= np.mean(sdss[sdss_name + 'flux'][m] / (np.sqrt( 1 / sdss[sdss_name + 'ivar'][m]))) > snr
                 if res:
                     for attr in ['loglam', 'flux', 'ivar', 'and_mask']:
                         if name + '/' + attr not in self.cat:
@@ -373,7 +378,8 @@ class catalog(list):
                                             dtype=data.dtype)
                     self.cat.flush()
                     n += 1
-                    print(n)
+                    if n % int(num / 10) == 0:
+                        print(f"{n} out of {num}")
                     self.cat['meta/num'][0] = [self.cat['meta/num'][0] + 1] if 'meta/num' in self.cat else [1]
                 else:
                     # print('missed: {0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))

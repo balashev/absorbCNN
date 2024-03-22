@@ -59,6 +59,8 @@ class Model_adapter:
         denominator = tf.math.add(y_ide, self.eps)
         fraction = tf.math.divide(y_ide, denominator)
         squared_diff = tf.math.squared_difference(y_new, y_pred)
+        #squared_diff = tf.math.squared_difference(tf.math.multiply(y_new, y_new), tf.math.multiply(y_pred, y_pred))
+        #squared_diff = tf.math.squared_difference(tf.math.pow(tf.constant(10, dtype='float'), y_new), tf.math.pow(tf.constant(10, dtype='float'), y_pred))
         Lh = tf.math.multiply(fraction, squared_diff)
         # return backend.sum(Lh, axis=-1)
         return backend.mean(Lh, axis=-1)

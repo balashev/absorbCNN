@@ -151,7 +151,7 @@ class CNN_dla(CNN):
             - ind        :   number of the spectrum to use
         """
         if ind != None:
-            self.d.get_dla_from_CNN(ind)
+            self.d.get_abs_from_CNN(ind)
 
     def dla_make_catalog(self, action, dset='valid'):
         """
