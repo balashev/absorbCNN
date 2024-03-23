@@ -7,8 +7,8 @@ class CNN_for_H2():
         adapter = Model_adapter()
         self.model = Model(inputs=adapter.inputs, outputs=adapter.outputs)
         self.model.compile(optimizer=optimizers.Adam(learning_rate=0.001),
-                           loss={'ide': adapter.ide_loss, 'red': adapter.red_loss},
-                           loss_weights=[1, 1],
+                           loss={'ide': adapter.ide_loss, 'red': adapter.red_loss, 'col': adapter.col_loss},
+                           loss_weights=[1, 1, 1],
                            metrics={'ide': [adapter.BinaryFalsePositives(), adapter.BinaryFalseNegatives()]}
                            )
 
@@ -33,7 +33,8 @@ class Model_adapter:
         x = layers.Dropout(0.02)(x)
         ide = layers.Dense(1, activation='sigmoid', name='ide')(x)
         red = layers.Dense(1, name='red')(x)
-        self.outputs = [ide, red]
+        col = layers.Dense(1, name='col')(x)
+        self.outputs = [ide, red, col]
 
     def ide_loss(self, y_true, y_pred):
         y_new = tf.reshape(y_true[:,0], shape=tf.shape(y_pred))
@@ -46,7 +47,6 @@ class Model_adapter:
         Lc = tf.subtract(a, b)
         # return backend.sum(Lc, axis=-1)
         return backend.mean(Lc, axis=-1)
-        
 
     def red_loss(self, y_true, y_pred):
         y_new = tf.reshape(y_true[:,1], shape=tf.shape(y_pred))

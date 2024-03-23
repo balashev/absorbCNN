@@ -46,7 +46,6 @@ class Model_adapter:
         Lc = tf.subtract(a, b)
         # return backend.sum(Lc, axis=-1)
         return backend.mean(Lc, axis=-1)
-        
 
     def red_loss(self, y_true, y_pred):
         y_new = tf.reshape(y_true[:,1], shape=tf.shape(y_pred))

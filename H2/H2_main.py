@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import pickle
 
@@ -57,7 +58,7 @@ class CNN_h2(CNN):
         self.d.open()
         if action == 'run':
             labels = np.stack((self.d.get('flag', dset='train'), self.d.get('pos', dset='train'), self.d.get('logN', dset='train')), axis=-1)
-            history = self.cnn.model.fit(self.d.get('specs', dset='train'), {'ide': labels, 'red': labels},
+            history = self.cnn.model.fit(self.d.get('specs', dset='train'), {'ide': labels, 'red': labels, 'col': labels},
                                 epochs=epochs, batch_size=700, shuffle=False)
             self.cnn.model.save(self.h2_model_filename)
 
@@ -84,11 +85,11 @@ class CNN_h2(CNN):
         """
         self.d.open()
         labels_valid = np.stack((self.d.get('flag', dset='valid')[:], self.d.get('pos', dset='valid')[:], self.d.get('logN', dset='valid')[:]), axis=-1)
-        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid'), {'ide': labels_valid, 'red': labels_valid})
+        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid'), {'ide': labels_valid, 'red': labels_valid, 'col': labels_valid})
         # print(f'Test loss valid any: {score[0]}')
         print(f'Test loss valid any: {score}')
         m = self.d.get('flag', dset='valid') == 1
-        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid')[m], {'ide': labels_valid[m, :], 'red': labels_valid[m, :]})
+        score = self.cnn.model.evaluate(self.d.get('specs', dset='valid')[m], {'ide': labels_valid[m, :], 'red': labels_valid[m, :], 'col': labels_valid[m, :]})
         print(f'Test loss valid H2: {score}')
         # print(f'Test loss valid DLA: {score[0]}')
 
@@ -105,16 +106,7 @@ class CNN_h2(CNN):
 
         return fig, ax
 
-    def h2_get_from_CNN(self, ind=None):
-        """
-        Get the DLAs from the SDSS spectrum set by <ind> using DLA CNN model
-        parameters:
-            - ind        :   number of the spectrum to use
-        """
-        if ind != None:
-            self.d.get_h2_from_CNN(ind)
-
-    def h2_make_catalog(self, action, dset='valid'):
+    def h2_make_catalog(self, action, dset='valid', num=np.inf):
         """
         Make the catalog of DLAs from the SDSS spectrum set by <ind> using DLA CNN model. The catalog is saved in/read from <self.catalog_filename>_dla_<dset>.pickle
         parameters:
@@ -124,11 +116,13 @@ class CNN_h2(CNN):
         if action == 'run':
             dla = []
             for ind in self.d.get_inds(dset=dset):
-                res = self.d.get_abs_from_CNN(ind, plot=True)
+                res = self.d.get_abs_from_CNN(ind, plot=False)
                 print(ind, res)
                 if len(res) > 0:
                     # plot_preds(ind, d=d, model=model, sdss=sdss)
                     dla.extend(res)
+                if ind > num:
+                    break
             # print(dla)
             with open(self.catalog_filename.replace('.hdf5', f'_h2_{dset}.pickle'), 'wb') as f:
                 pickle.dump(dla, f)
@@ -172,7 +166,7 @@ class CNN_h2(CNN):
                     if fn:
                         stat['fn'].append([ind, real['z_abs'][0], real['logN'][0]])
                         # plot_preds(ind, d=d, model=model, sdss=sdss)
-        if 0:
+        if 1:
             print(stat['corr'][0])
             print(stat['fp'][0])
             print(stat['fn'][0])
@@ -184,11 +178,11 @@ class CNN_h2(CNN):
 
         if 'number_count_cols' in kind:
             print("Number count statistics by column density:")
-            n = np.linspace(19.5, 22.5, 7)
+            n = np.linspace(19.0, 21.5, 7)
             print('N_l  N_r  Ntotal  Nfp  Nfn  f_fp  f_np')
             for i in range(len(n) - 1):
-                cor = [s for s in stat['corr'] if (s[9] > n[i]) * (s[9] < n[i + 1])]
-                pos = [s for s in stat['fp'] if (s[5] > n[i]) * (s[5] < n[i + 1])]
+                cor = [s for s in stat['corr'] if (s[6] > n[i]) * (s[6] < n[i + 1])]
+                pos = [s for s in stat['fp'] if (s[6] > n[i]) * (s[6] < n[i + 1])]
                 neg = [s for s in stat['fn'] if (s[2] > n[i]) * (s[2] < n[i + 1])]
                 if len(cor) > 0:
                     print(n[i], n[i + 1], len(cor), len(pos), len(neg), len(pos) / len(cor), len(neg) / len(cor))
@@ -198,7 +192,7 @@ class CNN_h2(CNN):
             z = np.linspace(2., 5, 7)
             print('z_l  z_r  Ntotal  Nfp  Nfn  f_fp  f_np')
             for i in range(len(n) - 1):
-                cor = [s for s in stat['corr'] if (s[8] > z[i]) * (s[8] < z[i + 1])]
+                cor = [s for s in stat['corr'] if (s[5] > z[i]) * (s[5] < z[i + 1])]
                 pos = [s for s in stat['fp'] if (s[2] > z[i]) * (s[2] < z[i + 1])]
                 neg = [s for s in stat['fn'] if (s[1] > z[i]) * (s[1] < z[i + 1])]
                 if len(cor) > 0:
@@ -207,6 +201,10 @@ class CNN_h2(CNN):
         if 'compare_cols' in kind:
             fig, ax = plt.subplots()
             ax.plot([s[9] for s in stat['corr']], [s[5] for s in stat['corr']], '+')
+            ax.plot([min([s[9] for s in stat['corr']]), max([s[9] for s in stat['corr']])], [min([s[9] for s in stat['corr']]), max([s[9] for s in stat['corr']])], '--k')
+            ax.set_xlabel(r'true $\log N(\rm H_2)$')
+            ax.set_ylabel(r'estimated $\log N(\rm H_2)$')
+            fig.savefig("cols_comparison.png")
             plt.show()
 
         return stat
