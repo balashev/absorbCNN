@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 
 from ..main import CNN
+from ..tools import Timer
 from .H2_data_class import h2_data
 from .H2_conv_model import CNN_for_H2
 
@@ -114,23 +115,43 @@ class CNN_h2(CNN):
             - dset       :   dataset to use. Can be 'valid' ot 'train'
         """
         if action == 'run':
-            dla = []
-            for ind in self.d.get_inds(dset=dset):
-                res = self.d.get_abs_from_CNN(ind, plot=False)
-                print(ind, res)
-                if len(res) > 0:
-                    # plot_preds(ind, d=d, model=model, sdss=sdss)
-                    dla.extend(res)
-                if ind > num:
-                    break
+            abs = []
+            if 0:
+                for ind in self.d.get_inds(dset=dset):
+                    res = self.d.get_abs_from_CNN(ind, plot=False, lab=self.d.h2bands['L0-0'])
+                    print(ind, res)
+                    if len(res) > 0:
+                        # plot_preds(ind, d=d, model=model, sdss=sdss)
+                        abs.extend(res)
+                    if ind > num:
+                        break
+            else:
+                t = Timer('cat')
+                print(self.d.get_inds(dset=dset))
+                specs, reds, *other = self.d.get_spec(self.d.get_inds(dset=dset))
+                t.time('load')
+                print(len(specs))
+                if self.cnn != None:
+                    preds = np.asarray(self.cnn.model.predict(specs))
+                    t.time('predict')
+                for ind in self.d.get_inds(dset=dset):
+                    inds = np.where(other[-1] == ind)[0]
+                    res = self.d.get_abs_from_CNN(ind, reds=reds[inds], preds=preds[:, inds, :], plot=False, lab=self.d.h2bands['L0-0'])
+                    print(ind, res)
+                    if len(res) > 0:
+                        abs.extend(res)
+                    if ind > num:
+                        break
+                t.time('catalog')
             # print(dla)
             with open(self.catalog_filename.replace('.hdf5', f'_h2_{dset}.pickle'), 'wb') as f:
-                pickle.dump(dla, f)
+                pickle.dump(abs, f)
+
         elif action == 'load':
             with open(self.catalog_filename.replace('.hdf5', f'_h2_{dset}.pickle'), 'rb') as f:
-                dla = pickle.load(f)
+                abs = pickle.load(f)
 
-        return dla
+        return abs
             # print(len(dla))
 
     def h2_catalog_stats(self, kind=['number_count_total', 'number_count_cols', 'number_count_redshifts', 'compare_cols']):
@@ -181,8 +202,8 @@ class CNN_h2(CNN):
             n = np.linspace(19.0, 21.5, 7)
             print('N_l  N_r  Ntotal  Nfp  Nfn  f_fp  f_np')
             for i in range(len(n) - 1):
-                cor = [s for s in stat['corr'] if (s[6] > n[i]) * (s[6] < n[i + 1])]
-                pos = [s for s in stat['fp'] if (s[6] > n[i]) * (s[6] < n[i + 1])]
+                cor = [s for s in stat['corr'] if (s[9] > n[i]) * (s[9] < n[i + 1])]
+                pos = [s for s in stat['fp'] if (s[5] > n[i]) * (s[5] < n[i + 1])]
                 neg = [s for s in stat['fn'] if (s[2] > n[i]) * (s[2] < n[i + 1])]
                 if len(cor) > 0:
                     print(n[i], n[i + 1], len(cor), len(pos), len(neg), len(pos) / len(cor), len(neg) / len(cor))
@@ -192,7 +213,7 @@ class CNN_h2(CNN):
             z = np.linspace(2., 5, 7)
             print('z_l  z_r  Ntotal  Nfp  Nfn  f_fp  f_np')
             for i in range(len(n) - 1):
-                cor = [s for s in stat['corr'] if (s[5] > z[i]) * (s[5] < z[i + 1])]
+                cor = [s for s in stat['corr'] if (s[8] > z[i]) * (s[8] < z[i + 1])]
                 pos = [s for s in stat['fp'] if (s[2] > z[i]) * (s[2] < z[i + 1])]
                 neg = [s for s in stat['fn'] if (s[1] > z[i]) * (s[1] < z[i + 1])]
                 if len(cor) > 0:

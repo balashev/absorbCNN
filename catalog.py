@@ -238,7 +238,6 @@ class catalog(list):
         """
         noter = np.genfromtxt(dla_cat, skip_header=32, names=True, usecols=(0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12), dtype='U9, <i8, <i8, <i8, U5, U4, <f8, <f8, <f8, <f8, <f8')
 
-        print(source)
         self.missed = open('missed.dat', 'a')
         self.open(stored=self.stored, attr='a')
         if source != 'web':
@@ -300,11 +299,11 @@ class catalog(list):
         self.close()
 
     def add_H2(self, name, z_qso, debug=False):
-        H2cutoff = self.parent.H2bands['L3-0']
+        H2cutoff = self.parent.H2bands['L2-0']
         x, y, err = self.cat[name + '/loglam'][:], self.cat[name + '/flux'][:], 1 / np.sqrt(self.cat[name + '/ivar'][:])
         imin, imax = max(x[0], np.log10(self.parent.lyc * (1 + z_qso))), min(x[-1], np.log10(H2cutoff * (1 + z_qso) * (1 - 2e3 / 3e5)))
         z_H2 = 10 ** (np.random.randint(int(imin * 1e4), int(imax * 1e4)) / 1e4) / H2cutoff - 1
-        logN = 19 + np.random.rand() ** 2 * 2.5
+        logN = 19.0 + np.random.rand() * 2.5
         #z_H2, logN = z_qso - 0.1, 19
         x1, f = self.H2.calc_profile(x=10**x, z=z_H2, logN=logN, b=5, j=6, T=100, exc='low')
         f = convolve_res(x1, f, 1800)
@@ -325,7 +324,7 @@ class catalog(list):
 
         return z_H2, logN
 
-    def make_H2_mock(self, num=None, source='web', dla_cat=None, snr=10):
+    def make_H2_mock(self, num=None, source='web', dla_cat=None, snr=6):
         """
         append the spectra of the catalog from the source (website or local file) and store it in hdf5 file in <data/> dataset
         check if spectrum is alaredy in catalog
