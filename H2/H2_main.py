@@ -141,7 +141,7 @@ class CNN_h2(CNN):
             else:
                 tp_fp.append(0)
 
-        compl = [[[0.000001,0.000001]]*8 for i in range(7)]
+        compl = [[[0.000001 for k in range(2)] for j in range(8)] for i in range(7)]
         for N, stn, tf in zip(nhi, S_to_N, tp_fn):
             if stn < 8 and N > 19 and N < 22.5:
                 if tf == 1:
@@ -149,14 +149,15 @@ class CNN_h2(CNN):
                     compl[int((N - 19) * 2)][int(stn)][1] += 1
                 elif tf == -1:
                     compl[int((N - 19) * 2)][int(stn)][1] += 1
-        pure = [[[0.000001,0.000001]]*8 for i in range(7)]
+        pure = [[[0.000001 for k in range(2)] for j in range(8)] for i in range(7)]
         for N, stn, tf in zip(nhi, S_to_N, tp_fp):
             if stn < 8 and N > 19 and N < 22.5:
                 if tf == 1:
                     pure[int((N - 19) * 2)][int(stn)][0] += 1
                     pure[int((N - 19) * 2)][int(stn)][1] += 1
                 elif tf == -1:
-                    pure[int((N - 19) * 2)][int(stn)][1] += 1            
+                    pure[int((N - 19) * 2)][int(stn)][1] += 1     
+
         compl = [[np.round(c[0] / c[1], 2) for c in com] for com in compl]
         pure = [[np.round(c[0] / c[1], 2) for c in com] for com in pure]
             
