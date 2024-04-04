@@ -112,7 +112,7 @@ class CNN_h2(CNN):
         self.cat.open()
         q = self.cat.cat['meta/qso'][...]
         nhi, S_to_N, tp_fn, tp_fp = [], [], [], []
-        for ind in self.d.get_inds(dset=dset)[:20]:
+        for ind in self.d.get_inds(dset=dset):
             name = 'meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
             real = self.cat.cat[name][...]
             name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
