@@ -9,7 +9,7 @@ class CNN_for_H2():
         self.model.compile(optimizer=optimizers.Adam(learning_rate=0.001),
                            loss={'ide': adapter.ide_loss, 'red': adapter.red_loss, 'col': adapter.col_loss},
                            loss_weights=[1, 1, 1],
-                           metrics={'ide': [adapter.BinaryFalsePositives(), adapter.BinaryFalseNegatives()]}
+                           metrics={'ide': [adapter.BinaryTruePositives(), adapter.BinaryFalsePositives(), adapter.BinaryFalseNegatives()]}
                            )
 
 class Model_adapter:
