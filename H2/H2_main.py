@@ -107,7 +107,7 @@ class CNN_h2(CNN):
 
         return fig, ax
     
-    def h2_plot_pure_compl(self, dset='valid'):
+    def h2_plot_pure_compl(self, dset='valid', NA_limit=5):
 
         self.cat.open()
         q = self.cat.cat['meta/qso'][...]
@@ -158,8 +158,8 @@ class CNN_h2(CNN):
                 elif tf == -1:
                     pure[int((N - 19) * 2)][int(stn)][1] += 1     
 
-        compl = [[np.round(c[0] / c[1], 2) for c in com] for com in compl]
-        pure = [[np.round(c[0] / c[1], 2) for c in com] for com in pure]
+        compl = [[np.round(c[0] / c[1], 2) if c[1] > NA_limit else 'N/A' for c in com] for com in compl]
+        pure = [[np.round(c[0] / c[1], 2) if c[1] > NA_limit else 'N/A' for c in com] for com in pure]
             
         fig, ax = plt.subplots()
         fig.patch.set_visible(False)
