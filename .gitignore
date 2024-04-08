@@ -27,6 +27,7 @@
 *.sqlite
 *.hdf5
 *.dat
+*.png
 
 # OS generated files #
 ######################
