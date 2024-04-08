@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import os
 
 from .line_profiles import line, convolve_res, H2abs
+from .tools import add_field
 
 class catalog(list):
     """
@@ -83,7 +84,10 @@ class catalog(list):
         missed.close()
         #print(cat[attrs])
         #print(np.array(cat[attrs]).dtype)
-        self.cat.create_dataset('meta/qso', data=np.array(cat[attrs]))
+        meta = np.array(cat[attrs])
+        for attr in ['SNR_DLA', 'SNR_H2']:
+            meta = add_field(meta, [(attr, float)])
+        self.cat.create_dataset('meta/qso', data=meta)
         print(self.cat['meta/qso'].dtype)
         self.close()
 
@@ -171,6 +175,8 @@ class catalog(list):
         if 'meta/num' not in self.cat:
             self.cat.create_dataset('meta/num', data=[skip])
 
+        meta = self.cat['meta/qso/'][...]
+
         for i, q in enumerate(self.cat['meta/qso'][skip:num+skip]):
             name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBERID'])
             #print(name)
@@ -185,15 +191,21 @@ class catalog(list):
                         for attr in ['loglam', 'flux', 'ivar', 'and_mask']:
                             if name + '/' + attr not in self.cat:
                                 self.cat.create_dataset(name + '/' + attr, data=sdss[sdss_name + attr][:], dtype=sdss[sdss_name + attr].dtype)
-
+                        for attr, cut in zip(['SNR_DLA', 'SNR_H2'], [1230, 1150]):
+                            m = self.cat[name + '/loglam'] < np.log10(cut * (1 + q['Z']))
+                            if np.sum(m) > 0:
+                                snr = np.median(np.divide(self.cat[name + '/flux'][m], 1 / np.sqrt(self.cat[name + '/ivar'][m])))
+                                meta[attr][skip+i] = snr
                     res = sdss_name in sdss
                     #try:
 
                 if res:
-                    self.cat['meta/num'][0] =  [self.cat['meta/num'][0] + 1] if 'meta/num' in self.cat else [skip+1]
+                    self.cat['meta/num'][0] = [self.cat['meta/num'][0] + 1] if 'meta/num' in self.cat else [skip+1]
                 else:
                     print('missed: {0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))
                     self.missed.write('{0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))
+
+        self.cat['meta/qso'][...] = meta
 
         if source != 'web':
             sdss.close()
@@ -247,6 +259,9 @@ class catalog(list):
             num = len(self.cat['meta/qso'])
         if 'meta/num' not in self.cat:
             self.cat.create_dataset('meta/num', data=[0])
+
+        meta = self.cat['meta/qso/'][...]
+
         d = np.zeros(num)
         mask = np.zeros(len(self.cat['meta/qso'][:]), dtype=bool)
         n = 0
@@ -268,6 +283,13 @@ class catalog(list):
                         for attr in ['loglam', 'flux', 'ivar', 'and_mask']:
                             if name + '/' + attr not in self.cat:
                                 self.cat.create_dataset(name + '/' + attr, data=sdss[sdss_name + attr][:], dtype=sdss[sdss_name + attr].dtype)
+
+                        for attr, cut in zip(['SNR_DLA', 'SNR_H2'], [1230, 1150]):
+                            m = self.cat[name + '/loglam'] < np.log10(cut * (1 + q['Z']))
+                            if np.sum(m) > 0:
+                                snr = np.median(np.divide(self.cat[name + '/flux'][m], 1 / np.sqrt(self.cat[name + '/ivar'][m])))
+                                meta[attr][i] = snr
+
                         mask[i] = True
                         z_dla, NHI = self.add_dla(name, z_qso=self.cat['meta/qso'][i]['Z'])
                         d[n] = 1
@@ -294,6 +316,8 @@ class catalog(list):
         self.cat.create_dataset('meta/qso', data=data[mask])
         self.add_attr('dla', d)
         self.cat['meta/qso']['dla'] = d
+
+        self.cat['meta/qso'][...] = meta
 
         if source != 'web':
             sdss.close()
@@ -348,6 +372,9 @@ class catalog(list):
             num = len(self.cat['meta/qso'])
         if 'meta/num' not in self.cat:
             self.cat.create_dataset('meta/num', data=[0])
+
+        meta = self.cat['meta/qso/'][...]
+
         d = np.zeros(num)
         mask = np.zeros(len(self.cat['meta/qso'][:]), dtype=bool)
         n = 0
@@ -367,6 +394,12 @@ class catalog(list):
                     for attr in ['loglam', 'flux', 'ivar', 'and_mask']:
                         if name + '/' + attr not in self.cat:
                             self.cat.create_dataset(name + '/' + attr, data=sdss[sdss_name + attr][:], dtype=sdss[sdss_name + attr].dtype)
+
+                    for attr, cut in zip(['SNR_DLA', 'SNR_H2'], [1230, 1150]):
+                        m = self.cat[name + '/loglam'] < np.log10(cut * (1 + q['Z']))
+                        if np.sum(m) > 0:
+                            meta[attr][i] = np.median(np.divide(self.cat[name + '/flux'][m], 1 / np.sqrt(self.cat[name + '/ivar'][m])))
+
                     mask[i] = True
                     z_H2, logN = self.add_H2(name, z_qso=self.cat['meta/qso'][i]['Z'])
                     if 1:
@@ -389,9 +422,8 @@ class catalog(list):
                 break
 
         print(sum(mask))
-        data = self.cat['meta/qso'][...]
         del self.cat['meta/qso']
-        self.cat.create_dataset('meta/qso', data=data[mask])
+        self.cat.create_dataset('meta/qso', data=meta[mask])
         self.add_attr('H2', d)
         self.cat['meta/qso']['H2'] = d
 

@@ -107,21 +107,19 @@ class CNN_h2(CNN):
 
         return fig, ax
     
-    def h2_plot_pure_compl(self, dset='valid', NA_limit=5):
+    def h2_plot_pure_compl(self, dset='valid', NA_limit=2):
 
         self.cat.open()
         q = self.cat.cat['meta/qso'][...]
+        print(q.dtype)
+        print(q['SNR_H2'])
         nhi, S_to_N, tp_fn, tp_fp = [], [], [], []
         for ind in self.d.get_inds(dset=dset):
+
             name = 'meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
             real = self.cat.cat[name][...]
-            name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
-            # h2 = self.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])][:]
-            flux = self.cat.cat[name + '/flux'][:]
-            # nhi.append(h2['logN'])
-            err = 1 / np.sqrt(self.cat.cat[name + '/ivar'][:])
             nhi.append(real['logN'][0])
-            S_to_N.append(np.median(np.divide(flux, err)))
+            S_to_N.append(q[ind]['SNR_H2'])
 
             self.d.open()
             spec = self.d.get_spec(inds=[ind])[0]
@@ -140,6 +138,8 @@ class CNN_h2(CNN):
                 tp_fp.append(-1)
             else:
                 tp_fp.append(0)
+
+        print(S_to_N)
 
         compl = [[[0.000001 for k in range(2)] for j in range(8)] for i in range(7)]
         for N, stn, tf in zip(nhi, S_to_N, tp_fn):
