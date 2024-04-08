@@ -31,7 +31,7 @@ class CNN_h2(CNN):
         if bands != None:
             self.bands = bands
 
-        self.d = h2_data(self, window=self.window, bands=self.bands, timing=False, filename=self.catalog_filename.replace('.hdf5', '_dla_data.hdf5'))
+        self.d = h2_data(self, window=self.window, bands=self.bands, timing=False, filename=self.catalog_filename.replace('.hdf5', '_data.hdf5'))
 
         if action == 'new':
             self.d.new()
@@ -227,5 +227,8 @@ class CNN_h2(CNN):
             ax.set_ylabel(r'estimated $\log N(\rm H_2)$')
             fig.savefig("cols_comparison.png")
             plt.show()
+            for n in np.linspace(19.0, 21.5, 30):
+                cor = [s[5] for s in stat['corr'] if (s[9] > n - 0.1) * (s[9] < n + 0.1)]
+                print(n, np.mean(cor), np.std(cor))
 
         return stat

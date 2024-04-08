@@ -175,7 +175,7 @@ class catalog(list):
             name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBERID'])
             #print(name)
             if name not in self.cat:
-                print(i, name, name in self.cat)
+                #print(i, name, name in self.cat)
                 if source == 'web':
                     res = self.download(ra=q['RA'], dec=q['DEC'], plate=q['PLATE'], MJD=q['MJD'], fiber=q['FIBERID'])
                 else:
@@ -278,6 +278,9 @@ class catalog(list):
                         self.cat.flush()
                         n += 1
                         print(n)
+                        if n % int(num / 10) == 0:
+                            print(f"{n} out of {num}")
+
                         self.cat['meta/num'][0] = [self.cat['meta/num'][0] + 1] if 'meta/num' in self.cat else [1]
                     else:
                         #print('missed: {0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))
@@ -299,11 +302,12 @@ class catalog(list):
         self.close()
 
     def add_H2(self, name, z_qso, debug=False):
-        H2cutoff = self.parent.H2bands['L2-0']
+        H2cutoff = self.parent.H2bands['L4-0']
         x, y, err = self.cat[name + '/loglam'][:], self.cat[name + '/flux'][:], 1 / np.sqrt(self.cat[name + '/ivar'][:])
-        imin, imax = max(x[0], np.log10(self.parent.lyc * (1 + z_qso))), min(x[-1], np.log10(H2cutoff * (1 + z_qso) * (1 - 2e3 / 3e5)))
-        z_H2 = 10 ** (np.random.randint(int(imin * 1e4), int(imax * 1e4)) / 1e4) / H2cutoff - 1
-        logN = 19.0 + np.random.rand() * 2.5
+        v_prox = 5e3
+        imin, imax = max(x[0], np.log10(self.parent.lyc * (1 + z_qso))), min(x[-1], np.log10(H2cutoff * (1 + z_qso) * (1 + v_prox / 3e5)))
+        z_H2 = 10 ** (imax - np.random.rand() ** 2 * (imax - imin)) / H2cutoff - 1
+        logN = 19.5 + np.random.rand() ** 2 * 1.5
         #z_H2, logN = z_qso - 0.1, 19
         x1, f = self.H2.calc_profile(x=10**x, z=z_H2, logN=logN, b=5, j=6, T=100, exc='low')
         f = convolve_res(x1, f, 1800)
@@ -324,7 +328,7 @@ class catalog(list):
 
         return z_H2, logN
 
-    def make_H2_mock(self, num=None, source='web', dla_cat=None, snr=6):
+    def make_H2_mock(self, num=None, source='web', dla_cat=None, snr=3):
         """
         append the spectra of the catalog from the source (website or local file) and store it in hdf5 file in <data/> dataset
         check if spectrum is alaredy in catalog

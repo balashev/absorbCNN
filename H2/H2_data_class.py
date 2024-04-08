@@ -21,7 +21,7 @@ class h2_data(data_structure):
             - filename       :  the filename of hdf5 file where the data will be stored
             - lines_file     :  H2_lines.dat
         """
-        super(h2_data, self).__init__(parent, timing=False, filename='data_H2.hdf5')
+        super(h2_data, self).__init__(parent, timing=False, filename=filename)
         self.window = window
         self.bands = bands
         self.shape = (self.window, self.bands)
@@ -54,7 +54,7 @@ class h2_data(data_structure):
         mask[:max(0, int((np.log10(self.parent.lyc * (1 + z_qso)) - s['loglam'][0]) * 1e4))] = False
 
         return mask
-    def make(self, ind=None, num=None, valid=0.3, dropout=0.7, dropout_h2=0.3, start=0, band='L3-0'):
+    def make(self, ind=None, num=None, valid=0.3, dropout=0.7, dropout_h2=0.3, start=0, band='L4-0'):
         print('make cat')
         self.parent.cat.open()
         if num == None:
@@ -68,9 +68,8 @@ class h2_data(data_structure):
             self.create(dset='valid')
             self.create(dset='train')
 
-        delta = [l for l in self.h2.get_bands(self.bands).values()]
-        delta = [int(np.log10(l/delta[0]) * 1e4) for l in delta]
-        print(delta)
+        #delta = [l for l in self.h2.get_bands(self.bands).values()]
+        #delta = [int(np.log10(l/delta[0]) * 1e4) for l in delta]
         print('Running make H2 catalog script:')
         for i in range(start, start + num):
             # print(i)
@@ -82,7 +81,7 @@ class h2_data(data_structure):
                     if i * 10 % num == 0:
                         print(i, ' of ', num)
                     s = self.parent.cat[i]
-                    if meta[i]['H2']:
+                    if 'H2' in meta[i].dtype.names and meta[i]['H2']:
                         self.parent.cat.open()
                         sdss_name1 = 'data/{0:05d}/{1:04d}/{2:05d}/'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])
                         sdss_name2 = 'data/{0:05d}_{1:05d}_{2:04d}/'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
@@ -95,19 +94,20 @@ class h2_data(data_structure):
                         else:
                             print('meta/{0:05d}/{1:05d}/{2:04d}/H2'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID']), ' vaporized in history')
                         self.parent.cat.close()
+                    else:
+                        h2 = []
                     #print(h2)
                     if s is not None:
-                        v_prox = 3000 # in km/s
-                        z_min = int((np.log10(self.h2bands['L0-0'] * (1 + meta[i]['Z']) * (1 + v_prox / 3e5)) - s['loglam'][0]) * 1e4)
-                        z_max = (1 + meta[i]['Z']) * (1 + v_prox / 3e5) - 1
+                        v_prox = -5000 # in km/s
+                        z_max = (1 + meta[i]['Z']) * (1 - v_prox / 3e5) - 1
                         z_min = (np.max([10 ** s['loglam'][0], self.parent.lyc * (1 + meta[i]['Z'])]) / self.h2bands[band] - 1)
                         #print(z_min, z_max)
                         if z_min < z_max:
-                            num = int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_max)) - s['loglam'][0]) * 1e4 + self.window / 2)) - int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_min)) - s['loglam'][0]) * 1e4 - self.window / 2))
+                            inum = int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_max)) - s['loglam'][0]) * 1e4 + self.window / 2)) - int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_min)) - s['loglam'][0]) * 1e4 - self.window / 2))
                             for band, l in self.h2bands.items():
                                 #print(band, l)
                                 i_max = int(np.trunc((np.log10(l * (1 + z_max)) - s['loglam'][0]) * 1e4 - self.window / 2))
-                                i_min = i_max - num
+                                i_min = i_max - inum
                                 #print(i_min, i_max, i_max - i_min)
                                 stride = s['flux'].strides[0]
                                 if i_max > 0:
@@ -116,16 +116,16 @@ class h2_data(data_structure):
                                         spec = np.append(np.median(specs[:-i_min, :], axis=2), spec, axis=0)
                                 else:
                                     spec = np.median(specs, axis=2)
-                                #print('spec:', spec.shape)
+                                spec = spec / np.quantile(spec, 0.8, axis=1)[:, None]
+                                spec[spec>1] = 1
                                 if band == 'L0-0':
                                     specs = spec[:, :, np.newaxis]
-                                    #print(specs.shape)
                                 else:
                                     specs = np.append(specs, spec[:, :, np.newaxis], axis=2)
-
+                            #print(specs.shape)
                             i_max = int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_max)) - s['loglam'][0]) * 1e4))
                             #print(i_max, num)
-                            reds = 10 ** s['loglam'][i_max-num:i_max] / self.h2bands['L0-0'] - 1
+                            reds = 10 ** s['loglam'][i_max-inum:i_max] / self.h2bands['L0-0'] - 1
                             inds = np.ones(len(reds), dtype=int) * i
                             flag = np.zeros_like(reds, dtype=bool)
                             pos = np.zeros_like(reds, dtype=int)
@@ -161,7 +161,7 @@ class h2_data(data_structure):
         if z is None:
             z = reds[flag][10]
         i = np.argmin(np.abs(reds - z))
-        pos = i - pos[flag][10] + 15
+        pos = i + 15 #pos[flag][10] + 15
         fig, ax = plt.subplots(nrows=self.bands+1, figsize=(12, 2 * self.bands + 6))
         for k in range(self.bands):
             ax[k].step(np.arange(specs.shape[1]), specs[pos, :, k], where='mid', color='k')
@@ -213,7 +213,7 @@ class h2_data(data_structure):
         print(meta['PLATE'], meta['MJD'], meta['FIBERID'])
         z_qso = meta['Z']  # sdss.cat['meta/qso']['Z_VI'][ind]
         print(z_qso)
-        i = int((np.log10(self.parent.lya * (1 + z_qso) * (1 - 3e3 / 3e5)) - s['loglam'][0]) * 1e4)
+        i = int((np.log10(self.parent.lya * (1 + z_qso) * (1 + 5e3 / 3e5)) - s['loglam'][0]) * 1e4)
         if i > 0 and meta['BI_CIV'] < 100:
             xlims = [10 ** s['loglam'][0], 10 ** s['loglam'][i + 200]]
             if add_info:
@@ -241,9 +241,7 @@ class h2_data(data_structure):
                 ax = axs[3]
             ax.plot(10 ** s['loglam'][:i + 200], s['flux'][:i + 200], 'k')
             if any(flag):
-                for z in self.parent.cat.cat[
-                             'meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:][
-                    'z_abs']:
+                for z in self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:]['z_abs']:
                     for b in self.h2bands.values():
                         ax.axvline(b * (1 + z), ls='--', color='tomato')
                 ax.axvline(self.parent.lya * (1 + z), ls=':', color='brown')
@@ -256,13 +254,20 @@ class h2_data(data_structure):
             ax.axvspan(10 ** s['loglam'][0],
                        10 ** s['loglam'][max(0, int((np.log10(911 * (1 + z_qso)) - s['loglam'][0]) * 1e4))], color='w',
                        alpha=0.5, zorder=2)
+
             res = self.get_abs_from_CNN(ind, plot=False, lab=self.h2bands['L0-0'])
             for r in res[::-1]:
-                print('cat:', z, r)
-                i = int((np.log10(self.h2bands['L0-0'] * (1 + r[2]) * (1 - 3e3 / 3e5)) - s['loglam'][0]) * 1e4) + 50
-                x1, f = self.h2.calc_profile(x=10 ** s['loglam'][:i + 50], z=r[2], logN=r[5], b=5, j=6, T=100, exc='low')
-                f = convolve_res(x1, f, 1800) * np.quantile(s['flux'][:i + 50], 0.95) * 1.1
+                #print('cat:', r)
+                imax = int((np.log10(self.h2bands['L0-0'] * (1 + r[2]) * (1 - 3e3 / 3e5)) - s['loglam'][0]) * 1e4) + 200
+                imin = max(0, int((np.log10(self.h2bands['L3-0'] * (1 + r[2]) * (1 - 3e3 / 3e5)) - s['loglam'][0]) * 1e4))
+                x1 = np.linspace(10 ** s['loglam'][0], 10 ** s['loglam'][imax], imax * 3)
+                #print(imax)
+                x1, f = self.h2.calc_profile(x=x1, z=r[2], logN=r[5], b=5, j=6, T=100, exc='low')
+                #print(x1)
+                f = convolve_res(x1, f, 1800) * np.quantile(s['flux'][imin:imax], 0.90)
+                #print(f)
                 ax.plot(x1, f, lw=1.0)
+                ax.axvline(self.parent.lya * (1 + r[2]), ls='--', color='brown')
             fig.subplots_adjust(wspace=0, hspace=0)
         else:
             fig, ax = plt.subplots(figsize=(14, 5), dpi=160)

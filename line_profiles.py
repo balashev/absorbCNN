@@ -50,11 +50,9 @@ def errf_v2(x):
     """
     Error function
     """
-    a = [-1.26551223, 1.00002368, 0.37409196, 0.09678418, -0.18628806, 0.27886807, -1.13520398, 1.48851587, -0.82215223,
-         0.17087277]
+    a = [-1.26551223, 1.00002368, 0.37409196, 0.09678418, -0.18628806, 0.27886807, -1.13520398, 1.48851587, -0.82215223, 0.17087277]
     t = 1 / (1 + 0.5 * np.abs(x))
-    tau = t * np.exp(-x ** 2 + a[0] + t * (a[1] + t * (
-                a[2] + t * (a[3] + t * (a[4] + t * (a[5] + t * (a[6] + t * (a[7] + t * (a[8] + t * a[9])))))))))
+    tau = t * np.exp(-x ** 2 + a[0] + t * (a[1] + t * (a[2] + t * (a[3] + t * (a[4] + t * (a[5] + t * (a[6] + t * (a[7] + t * (a[8] + t * a[9])))))))))
     if x >= 0:
         return 1 - tau
     else:
@@ -73,7 +71,7 @@ def convolve_res(l, f, R):
                         flux
         - R         : float
                         resolution of the instrument function. Assumed to be constant with wavelength.
-                        i.e. the width of the instrument function is linearly dependent on wavelenth.
+                        i.e. the width of the instrument function is linearly dependent on wavelength.
     returns:
         - fc        : float array, shape(N)
                         convolved flux
@@ -93,7 +91,8 @@ def convolve_res(l, f, R):
         while l[k] < x - delta * sig:
             k += 1
         il = k
-        s = f[il] * (1 - errf_v2((x - l[il]) / np.sqrt(2) / sig)) / 2
+        #s = f[il] * (1 - errf_v2((x - l[il]) / np.sqrt(2) / sig)) / 2
+        s = 0
         # ie = il + 30
         while k < n - 1 and l[k + 1] < x + delta * sig:
             # s += f[k] * 1 / np.sqrt(2 * np.pi) / sig * np.exp(-.5 * ((l[k] - x) / sig) ** 2) * d[k]
@@ -101,7 +100,7 @@ def convolve_res(l, f, R):
             # print(i, k , gauss(l[k] - x, sig))
             k += 1
         # input()
-        s += f[k] * (1 - errf_v2(np.abs(l[k] - x) / np.sqrt(2) / sig)) / 2
+        #s += f[k] * (1 - errf_v2(np.abs(l[k] - x) / np.sqrt(2) / sig)) / 2
         fc[i] = s
 
     return 1 - fc

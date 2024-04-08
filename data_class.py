@@ -131,7 +131,7 @@ class data_structure(list):
         """
         self.data.close()
 
-    def get(self, attr, dset='full', batch=None, ind_batch=0):
+    def get(self, attr, dset='full', inds=None, batch=None, ind_batch=0):
         """
         Get the data from data structure
         parameters:
@@ -141,8 +141,11 @@ class data_structure(list):
             -  ind_batch     :  Number of the batch.
         """
         self.open()
-        if batch == None:
-            return self.data[dset + '/' + attr][...][:]
+        if batch is None:
+            if inds is None:
+                return self.data[dset + '/' + attr][...][:]
+            else:
+                return self.data[dset + '/' + attr][inds]
         else:
             slices = np.s_[batch * ind_batch:min(batch * (ind_batch + 1), self.data[dset + '/' + attr].shape[0])]
             return self.data[dset + '/' + attr][slices]
@@ -235,39 +238,46 @@ class data_structure(list):
         """
         Get all the data in data structure correspond to the certain spectrum by index
         """
+        #t = Timer('get_spec')
         if isinstance(inds, (int, float, np.int64, np.int32)):
             inds = [inds]
         if sdss == None:
             args = np.asarray([], dtype=int)
             for ind in inds:
                 id = np.where(self.get('inds') == ind)[0]
+                #t.time('where')
                 #print(ind, id[np.argsort(self.get('reds')[id])])
                 args = np.r_[args, id[np.argsort(self.get('reds')[id])]]
-                #print(args)
-            return [self.get(attr)[args] for attr in self.attrs]
+                #t.time('args')
+            return [self.get(attr, inds=args) for attr in self.attrs]
         else:
             return self.make(self.parent.cat, ind=inds, dropout=0.0, dropout_dla=0.0)
 
 
-    def get_abs_from_CNN(self, ind, reds=None, preds=None, plot=False, threshold=0.8, lab=1215.67):
+    def get_abs_from_CNN(self, ind, reds=None, preds=None, plot=False, threshold=0.2, lab=1215.67, timer=False):
         """
         Get the DLA catalog from the spectrum using the statistics of the CNN results.
         parameters:
             - ind       :  index of the spectrum
             - plot      :  plot intermediate results
         """
-        #t = Timer('cat')
+        if timer:
+            t = Timer('cat')
+
         if reds is None and preds is None:
             specs, reds, *other = self.get_spec(ind)
+            if timer:
+                t.time('get')
             if self.parent.cnn != None:
                 preds = self.parent.cnn.model.predict(specs)
             else:
                 warnings.warn("There is no CNN model to predict", UserWarning)
-
+            if timer:
+                t.time('pred')
         abs = []
         m = (preds[0] > threshold).flatten()
         if sum(m) > 3:
-            zd = (1 + reds[m]) - 10 ** (preds[1].flatten()[m] * 1e-4) / lab - 1
+            zd = (1 + reds[m]) + 10 ** (preds[1].flatten()[m] * 1e-4) / lab - 1
             z = distr1d(zd, bandwidth=0.2)
             z.stats()
             if plot:
@@ -277,10 +287,10 @@ class data_structure(list):
             #print(zint)
             for i in range(len(zint)):
                 #print(i, zint[i])
-                mz = (z.x > zint[i] - 0.2) * (z.x < zint[i] + 0.2)
+                mz = (z.x > zint[i] - 0.1) * (z.x < zint[i] + 0.1)
                 if max([z.inter(x) for x in z.x[mz]]) > z.inter(z.point) / 3:
-                    mz = (zd > zint[i] - 0.2) * (zd < zint[i] + 0.2)
-                    if sum(mz) > 3:
+                    mz = (zd > zint[i] - 0.1) * (zd < zint[i] + 0.1)
+                    if sum(mz) > 3 and (len(abs) == 0 or np.min([np.abs(a[1] - np.median(preds[0][m][mz])) for a in abs]) > 0.1):
                         # print(sum(mz))
                         abs.append([ind, np.median(preds[0][m][mz])])
                         z1 = distr1d(zd[mz])
@@ -299,6 +309,7 @@ class data_structure(list):
                                 N.plot()
                             abs[-1].extend([N.point] + list(N.interval - N.point))
                         # print(i, z1.latex(f=4), N.latex(f=2))
-            #t.time('stats')
+            if timer:
+                t.time('stats')
 
         return abs
