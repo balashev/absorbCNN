@@ -120,6 +120,7 @@ class CNN_h2(CNN):
             real = self.cat.cat[name][...]
             nhi.append(real['logN'][0])
             S_to_N.append(q[ind]['SNR_H2'])
+            # print(S_to_N[-1])
 
             self.d.open()
             spec = self.d.get_spec(inds=[ind])[0]
@@ -139,7 +140,7 @@ class CNN_h2(CNN):
             else:
                 tp_fp.append(0)
 
-        print(S_to_N)
+        # print(S_to_N)
 
         compl = [[[0.000001 for k in range(2)] for j in range(8)] for i in range(7)]
         for N, stn, tf in zip(nhi, S_to_N, tp_fn):
