@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
+import pandas as pd
 import warnings
 
 from ..data_class import data_structure
@@ -100,7 +101,17 @@ class h2_data(data_structure):
                     if s is not None:
                         v_prox = -5000 # in km/s
                         z_max = (1 + meta[i]['Z']) * (1 - v_prox / 3e5) - 1
-                        z_min = (np.max([10 ** s['loglam'][0], self.parent.lyc * (1 + meta[i]['Z'])]) / self.h2bands[band] - 1)
+                        m = 10 ** s['loglam'] < (1 + z_max) * self.h2bands['L0-0']
+                        if np.sum(m) > 0:
+                            snr = pd.DataFrame(np.sqrt(1 / s['ivar'][m]) / s['flux'][m]).rolling(window=10).mean().fillna(method='bfill').fillna(method='ffill')
+                            #print(snr[:20], snr[0].gt(2).sum())
+                            if snr[0].gt(2).sum() > 0:
+                                #print(snr[snr[0].gt(2)].index[0])
+                                z_min = (np.max([10 ** s['loglam'][snr[snr[0].gt(2)].index[0]], self.parent.lyc * (1 + meta[i]['Z'])]) / self.h2bands[band] - 1)
+                            else:
+                                z_mix = z_max + 1
+                        else:
+                            z_mix = z_max + 1
                         #print(z_min, z_max)
                         if z_min < z_max:
                             inum = int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_max)) - s['loglam'][0]) * 1e4 + self.window / 2)) - int(np.trunc((np.log10(self.h2bands['L0-0'] * (1 + z_min)) - s['loglam'][0]) * 1e4 - self.window / 2))
@@ -215,7 +226,8 @@ class h2_data(data_structure):
         print(z_qso)
         i = int((np.log10(self.parent.lya * (1 + z_qso) * (1 + 5e3 / 3e5)) - s['loglam'][0]) * 1e4)
         if i > 0 and meta['BI_CIV'] < 100:
-            xlims = [10 ** s['loglam'][0], 10 ** s['loglam'][i + 200]]
+            xlims = [10 ** s['loglam'][0] - 100, 10 ** s['loglam'][i + 200]]
+            print(xlims)
             if add_info:
                 fig, axs = plt.subplots(4, 1, gridspec_kw={'height_ratios': [1, 1, 1, 5]}, figsize=(14, 5), dpi=160)
             else:

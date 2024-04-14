@@ -189,11 +189,8 @@ class H2abs():
         self.j = np.arange(j + 1)
         self.g = (2 * self.j + 1) * (2 * (self.j % 2) + 1)
         self.E = [self.energy['E'][(self.energy['J'] == j) * (self.energy['V'] == 0)] for j in self.j]
-        z = np.sum([self.g[j] * (np.exp(-self.E[j] / T) + 10 ** frac[exc] * np.exp(-self.E[j] / Ta[exc])) for j in
-                    self.j])  # excitation diagram using two temperatures for low and high rotational levels
-        return np.asarray(
-            [(self.g[j] / z * (np.exp(-self.E[j] / T) + 10 ** frac[exc] * np.exp(-self.E[j] / Ta[exc])))[0] for j in
-             self.j])
+        z = np.sum([self.g[j] * (np.exp(-self.E[j] / T) + 10 ** frac[exc] * np.exp(-self.E[j] / Ta[exc])) for j in self.j])  # excitation diagram using two temperatures for low and high rotational levels
+        return np.asarray([(self.g[j] / z * (np.exp(-self.E[j] / T) + 10 ** frac[exc] * np.exp(-self.E[j] / Ta[exc])))[0] for j in self.j])
 
     def calc_profile(self, x=None, z=0.0, logN=19, b=5, j=5, T=100, exc='low'):
         """
