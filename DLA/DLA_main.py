@@ -143,6 +143,81 @@ class CNN_dla(CNN):
             fig, ax = self.d.plot_preds(ind, fig=fig)
 
         return fig, ax
+    
+    def dla_plot_pure_compl(self, dset='valid', NA_limit=2):
+
+        self.cat.open()
+        q = self.cat.cat['meta/qso'][...]
+        print(q.dtype)
+        print(q['SNR_DLA'])
+        nhi, S_to_N, tp_fn, tp_fp = [], [], [], []
+        for ind in self.d.get_inds(dset=dset):
+
+            name = 'meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
+            real = self.cat.cat[name][...]
+            nhi.append(real['logN'][0])
+            S_to_N.append(q[ind]['SNR_DLA'])
+
+            self.d.open()
+            spec = self.d.get_spec(inds=[ind])[0]
+            inds = self.d.get('inds', dset=dset)[:]
+            labels_valid = np.stack((self.d.get('flag', dset=dset)[inds==ind], self.d.get('pos', dset=dset)[inds==ind], self.d.get('logN', dset=dset)[inds==ind]), axis=-1)
+            score = self.cnn.model.evaluate(spec, {'ide': labels_valid, 'red': labels_valid, 'col': labels_valid})
+            if score[-3] > score[-1]:
+                tp_fn.append(1)
+            elif score[-3] < score[-1]:
+                tp_fn.append(-1)
+            else:
+                tp_fn.append(0)
+            if score[-3] > score[-2]:
+                tp_fp.append(1)
+            elif score[-3] < score[-2]:
+                tp_fp.append(-1)
+            else:
+                tp_fp.append(0)
+
+        print(S_to_N)
+
+        compl = [[[0.000001 for k in range(2)] for j in range(8)] for i in range(7)]
+        for N, stn, tf in zip(nhi, S_to_N, tp_fn):
+            if stn < 8 and N > 19 and N < 22.5:
+                if tf == 1:
+                    compl[int((N - 19) * 2)][int(stn)][0] += 1
+                    compl[int((N - 19) * 2)][int(stn)][1] += 1
+                elif tf == -1:
+                    compl[int((N - 19) * 2)][int(stn)][1] += 1
+        pure = [[[0.000001 for k in range(2)] for j in range(8)] for i in range(7)]
+        for N, stn, tf in zip(nhi, S_to_N, tp_fp):
+            if stn < 8 and N > 19 and N < 22.5:
+                if tf == 1:
+                    pure[int((N - 19) * 2)][int(stn)][0] += 1
+                    pure[int((N - 19) * 2)][int(stn)][1] += 1
+                elif tf == -1:
+                    pure[int((N - 19) * 2)][int(stn)][1] += 1     
+
+        compl = [[np.round(c[0] / c[1], 2) if c[1] > NA_limit else 'N/A' for c in com] for com in compl]
+        pure = [[np.round(c[0] / c[1], 2) if c[1] > NA_limit else 'N/A' for c in com] for com in pure]
+            
+        fig, ax = plt.subplots()
+        fig.patch.set_visible(False)
+        ax.axis('off')
+        ax.axis('tight')
+        t = ax.table(cellText=pure, colLabels=range(8), rowLabels=[19+0.5*i for i in range(7)], loc='center')
+        t.auto_set_font_size(False)
+        t.set_fontsize(12)
+        fig.tight_layout()
+        plt.show()
+
+        fig, ax = plt.subplots()
+        fig.patch.set_visible(False)
+        ax.axis('off')
+        ax.axis('tight')
+        t = ax.table(cellText=compl, colLabels=range(8), rowLabels=[19+0.5*i for i in range(7)], loc='center')
+        t.auto_set_font_size(False)
+        t.set_fontsize(12)
+        fig.tight_layout()
+        plt.show()
+
 
     def dla_get_from_CNN(self, ind=None):
         """
@@ -163,7 +238,7 @@ class CNN_dla(CNN):
         if action == 'run':
             dla = []
             for ind in self.d.get_inds(dset=dset):
-                res = self.d.get_dla_from_CNN(ind, plot=False)
+                res = self.d.get_abs_from_CNN(ind, plot=False)
                 print(ind, res)
                 if len(res) > 0:
                     # plot_preds(ind, d=d, model=model, sdss=sdss)

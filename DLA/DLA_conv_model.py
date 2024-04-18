@@ -8,7 +8,9 @@ class CNN_for_DLA():
         self.model = Model(inputs=adapter.inputs, outputs=adapter.outputs)
         self.model.compile(optimizer=optimizers.Adam(learning_rate=0.001),
                            loss={'ide': adapter.ide_loss, 'red': adapter.red_loss, 'col': adapter.col_loss},
-                           loss_weights=[1, 1, 1])
+                           loss_weights=[1, 1, 1],
+                           metrics={'ide': [adapter.BinaryTruePositives(), adapter.BinaryFalsePositives(), adapter.BinaryFalseNegatives()]}
+                           )
 
 
 class Model_adapter:
