@@ -317,7 +317,7 @@ class catalog(list):
         self.add_attr('dla', d)
         self.cat['meta/qso']['dla'] = d
 
-        self.cat['meta/qso'][...] = meta
+        self.cat['meta/qso'][...] = meta[mask]
 
         if source != 'web':
             sdss.close()

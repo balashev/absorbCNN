@@ -163,7 +163,7 @@ class CNN_dla(CNN):
         if action == 'run':
             dla = []
             for ind in self.d.get_inds(dset=dset):
-                res = self.d.get_dla_from_CNN(ind, plot=False)
+                res = self.d.get_abs_from_CNN(ind, plot=False)
                 print(ind, res)
                 if len(res) > 0:
                     # plot_preds(ind, d=d, model=model, sdss=sdss)

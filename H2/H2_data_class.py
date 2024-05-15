@@ -55,7 +55,7 @@ class h2_data(data_structure):
         mask[:max(0, int((np.log10(self.parent.lyc * (1 + z_qso)) - s['loglam'][0]) * 1e4))] = False
 
         return mask
-    def make(self, ind=None, num=None, valid=0.3, dropout=0.7, dropout_h2=0.3, start=0, band='L4-0'):
+    def make(self, ind=None, num=None, valid=0.3, dropout=0.7, dropout_h2=0.3, start=0, band='L5-0', snr_thres=2):
         print('make cat')
         self.parent.cat.open()
         if num == None:
@@ -105,9 +105,9 @@ class h2_data(data_structure):
                         if np.sum(m) > 0:
                             snr = pd.DataFrame(np.sqrt(1 / s['ivar'][m]) / s['flux'][m]).rolling(window=10).mean().fillna(method='bfill').fillna(method='ffill')
                             #print(snr[:20], snr[0].gt(2).sum())
-                            if snr[0].gt(2).sum() > 0:
+                            if snr[0].gt(snr_thres).sum() > 0:
                                 #print(snr[snr[0].gt(2)].index[0])
-                                z_min = (np.max([10 ** s['loglam'][snr[snr[0].gt(2)].index[0]], self.parent.lyc * (1 + meta[i]['Z'])]) / self.h2bands[band] - 1)
+                                z_min = (np.max([10 ** s['loglam'][snr[snr[0].gt(snr_thres)].index[0]], self.parent.lyc * (1 + meta[i]['Z'])]) / self.h2bands[band] - 1)
                             else:
                                 z_mix = z_max + 1
                         else:

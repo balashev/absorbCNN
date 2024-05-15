@@ -254,7 +254,7 @@ class data_structure(list):
             return self.make(self.parent.cat, ind=inds, dropout=0.0, dropout_dla=0.0)
 
 
-    def get_abs_from_CNN(self, ind, reds=None, preds=None, plot=False, threshold=0.2, lab=1215.67, timer=False):
+    def get_abs_from_CNN(self, ind, reds=None, preds=None, plot=False, threshold=0.05, lab=1215.67, timer=False):
         """
         Get the DLA catalog from the spectrum using the statistics of the CNN results.
         parameters:
@@ -277,22 +277,23 @@ class data_structure(list):
         abs = []
         m = (preds[0] > threshold).flatten()
         if sum(m) > 3:
-            zd = (1 + reds[m]) + 10 ** (preds[1].flatten()[m] * 1e-4) / lab - 1
-            z = distr1d(zd, bandwidth=0.2)
+            zd = (1 + reds) + 10 ** (preds[1].flatten() * 1e-4) / lab - 1
+            z = distr1d(zd[m], bandwidth=0.2)
             z.stats()
             if plot:
                 z.plot()
             #zint = [min(zd)] + list(z.x[argrelextrema(z.inter(z.x), np.greater)[0]]) + [max(zd)]
             zint = z.x[argrelextrema(z.inter(z.x), np.greater)]
-            #print(zint)
+            print(zint)
             for i in range(len(zint)):
-                #print(i, zint[i])
+                print(i, zint[i])
                 mz = (z.x > zint[i] - 0.1) * (z.x < zint[i] + 0.1)
                 if max([z.inter(x) for x in z.x[mz]]) > z.inter(z.point) / 3:
-                    mz = (zd > zint[i] - 0.1) * (zd < zint[i] + 0.1)
-                    if sum(mz) > 3 and (len(abs) == 0 or np.min([np.abs(a[1] - np.median(preds[0][m][mz])) for a in abs]) > 0.1):
-                        # print(sum(mz))
-                        abs.append([ind, np.median(preds[0][m][mz])])
+                    mz = (zd > zint[i] - 0.02) * (zd < zint[i] + 0.02) * np.abs(preds[1].flatten()) > 0.1
+                    print(sum(mz))
+                    if sum(mz) > 3 and (len(abs) == 0 or np.min([np.abs(a[1] - np.median(preds[0][mz])) for a in abs]) > 0.1):
+                        #print(sum(mz))
+                        abs.append([ind, np.median(preds[0][mz])])
                         z1 = distr1d(zd[mz])
                         z1.kde(bandwidth=0.2)
                         z1.stats()
@@ -302,13 +303,13 @@ class data_structure(list):
                         abs[-1].extend([np.median(zd[mz])] + list(z1.interval - np.median(zd[mz])))
 
                         if len(preds) > 2:
-                            N = preds[2].flatten()[m][mz]
+                            N = preds[2].flatten()[mz]
                             N = distr1d(N)
                             N.stats()
                             if plot:
                                 N.plot()
                             abs[-1].extend([N.point] + list(N.interval - N.point))
-                        # print(i, z1.latex(f=4), N.latex(f=2))
+                        print(i, z1.latex(f=4), N.latex(f=2))
             if timer:
                 t.time('stats')
 
