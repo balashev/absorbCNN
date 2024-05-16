@@ -6,6 +6,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import pandas as pd
 
 from .line_profiles import line, convolve_res, H2abs
 from .tools import add_field
@@ -40,7 +41,7 @@ class catalog(list):
         self.parent = parent
         self.stored = stored
         if self.stored != None:
-          self.open()
+            self.open()
 
     def open(self, stored=None, attr='a'):
         """
@@ -299,7 +300,7 @@ class catalog(list):
                         self.cat.create_dataset(name.replace('data', 'meta') + '/dla', data=data, chunks=True, dtype=data.dtype)
                         self.cat.flush()
                         n += 1
-                        print(n)
+                        #print(n)
                         if n % int(num / 10) == 0:
                             print(f"{n} out of {num}")
 
@@ -325,30 +326,38 @@ class catalog(list):
         self.missed.close()
         self.close()
 
-    def add_H2(self, name, z_qso, debug=False):
-        H2cutoff = self.parent.H2bands['L4-0']
+    def add_H2(self, name, z_qso, debug=False, snr_thres=2):
+        H2cutoff = self.parent.H2bands['L5-0']
         x, y, err = self.cat[name + '/loglam'][:], self.cat[name + '/flux'][:], 1 / np.sqrt(self.cat[name + '/ivar'][:])
-        v_prox = 5e3
-        imin, imax = max(x[0], np.log10(self.parent.lyc * (1 + z_qso))), min(x[-1], np.log10(H2cutoff * (1 + z_qso) * (1 + v_prox / 3e5)))
-        z_H2 = 10 ** (imax - np.random.rand() ** 2 * (imax - imin)) / H2cutoff - 1
-        logN = 19.0 + np.random.rand() ** 2 * 3
-        #z_H2, logN = z_qso - 0.1, 19
-        x1, f = self.H2.calc_profile(x=10**x, z=z_H2, logN=logN, b=5, j=6, T=100, exc='low')
-        f = convolve_res(x1, f, 1800)
-        if debug:
-            m = (x > imin) * (x < imax)
-            print(name, z_qso)
-            print(imin, imax)
-            print(z_H2, logN)
-            plt.plot(10 ** x[m], y[m])
-        y = y * f + err * (1 - f) * np.random.randn(len(x)) / 2
-        #y = f
-        y[np.logical_not(np.isfinite(y))] = np.nanmedian(y)
-        self.cat[name + '/flux'][...] = y
+        v_prox = -5e3
+        z_max = (1 + z_qso) * (1 - v_prox / 3e5) - 1
+        m = 10 ** x < (1 + z_max) * self.parent.H2bands['L0-0']
+        z_H2, logN = None, None
+        if np.sum(m) > 0:
+            snr = pd.DataFrame(err[m] / y[m]).rolling(window=10).mean().fillna(method='bfill').fillna(method='ffill')
+            if snr[0].gt(snr_thres).sum() > 0:
+                v_prox = 5e3
+                print(name, snr[snr[0].gt(snr_thres)].index[0])
+                imin, imax = max(x[snr[snr[0].gt(snr_thres)].index[0]], np.log10(self.parent.lyc * (1 + z_qso))), min(x[-1], np.log10(H2cutoff * (1 + z_qso) * (1 + v_prox / 3e5)))
+                z_H2 = 10 ** (imax - np.random.rand() ** 2 * (imax - imin)) / H2cutoff - 1
+                logN = 19.0 + np.random.rand() ** 2 * 3
+                #z_H2, logN = z_qso - 0.1, 19
+                x1, f = self.H2.calc_profile(x=10**x, z=z_H2, logN=logN, b=5, j=6, T=100, exc='low')
+                f = convolve_res(x1, f, 1800)
+                if debug:
+                    m = (x > imin) * (x < imax)
+                    print(name, z_qso)
+                    print(imin, imax)
+                    print(z_H2, logN)
+                    plt.plot(10 ** x[m], y[m])
+                y = y * f + err * (1 - f) * np.random.randn(len(x)) / 2
+                #y = f
+                y[np.logical_not(np.isfinite(y))] = np.nanmedian(y)
+                self.cat[name + '/flux'][...] = y
 
-        if debug:
-            plt.plot(10 ** x[m], y[m])
-            plt.show()
+                if debug:
+                    plt.plot(10 ** x[m], y[m])
+                    plt.show()
 
         return z_H2, logN
 
@@ -400,21 +409,22 @@ class catalog(list):
                         if np.sum(m) > 0:
                             meta[attr][i] = np.median(np.divide(self.cat[name + '/flux'][m], 1 / np.sqrt(self.cat[name + '/ivar'][m])))
 
-                    mask[i] = True
                     z_H2, logN = self.add_H2(name, z_qso=self.cat['meta/qso'][i]['Z'])
-                    if 1:
-                        self.add_dla(name, z_dla=z_H2, logN=20.7, z_qso=self.cat['meta/qso'][i]['Z'])
-                    d[n] = 1
-                    # print(name + '/dla')
-                    data = np.array([(z_H2, logN)], np.dtype([('z_abs', np.float32), ('logN', np.float32)]))
+                    if z_H2 is not None:
+                        mask[i] = True
+                        if 1:
+                            self.add_dla(name, z_dla=z_H2, logN=20.7, z_qso=self.cat['meta/qso'][i]['Z'])
+                        d[n] = 1
+                        # print(name + '/dla')
+                        data = np.array([(z_H2, logN)], np.dtype([('z_abs', np.float32), ('logN', np.float32)]))
 
-                    self.cat.create_dataset(name.replace('data', 'meta') + '/H2', data=data, chunks=True,
-                                            dtype=data.dtype)
-                    self.cat.flush()
-                    n += 1
-                    if n % int(num / 10) == 0:
-                        print(f"{n} out of {num}")
-                    self.cat['meta/num'][0] = [self.cat['meta/num'][0] + 1] if 'meta/num' in self.cat else [1]
+                        self.cat.create_dataset(name.replace('data', 'meta') + '/H2', data=data, chunks=True,
+                                                dtype=data.dtype)
+                        self.cat.flush()
+                        n += 1
+                        if n % int(num / 10) == 0:
+                            print(f"{n} out of {num}")
+                        self.cat['meta/num'][0] = [self.cat['meta/num'][0] + 1] if 'meta/num' in self.cat else [1]
                 else:
                     # print('missed: {0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))
                     self.missed.write('{0:04d} {1:05d} {2:04d} \n'.format(q['PLATE'], q['MJD'], q['FIBERID']))
