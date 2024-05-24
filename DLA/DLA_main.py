@@ -155,11 +155,12 @@ class CNN_dla(CNN):
 
             name = 'meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
             real = self.cat.cat[name][...]
-            nhi.append(real['logN'][0])
+            nhi.append(real['NHI'][0])
             S_to_N.append(q[ind]['SNR_DLA'])
 
             self.d.open()
             spec = self.d.get_spec(inds=[ind])[0]
+            print(spec.shape)
             inds = self.d.get('inds', dset=dset)[:]
             labels_valid = np.stack((self.d.get('flag', dset=dset)[inds==ind], self.d.get('pos', dset=dset)[inds==ind], self.d.get('logN', dset=dset)[inds==ind]), axis=-1)
             score = self.cnn.model.evaluate(spec, {'ide': labels_valid, 'red': labels_valid, 'col': labels_valid})
@@ -319,8 +320,19 @@ class CNN_dla(CNN):
                     print(z[i], z[i + 1], len(cor), len(pos), len(neg), len(pos) / len(cor), len(neg) / len(cor))
 
         if 'compare_cols' in kind:
+            # fig, ax = plt.subplots()
+            # ax.plot([s[9] for s in stat['corr']], [s[5] for s in stat['corr']], '+')
+            # plt.show()
+
             fig, ax = plt.subplots()
             ax.plot([s[9] for s in stat['corr']], [s[5] for s in stat['corr']], '+')
+            ax.plot([min([s[9] for s in stat['corr']]), max([s[9] for s in stat['corr']])], [min([s[9] for s in stat['corr']]), max([s[9] for s in stat['corr']])], '--k')
+            ax.set_xlabel(r'true $\log N(\rm DLA)$')
+            ax.set_ylabel(r'estimated $\log N(\rm DLA)$')
+            fig.savefig("cols_comparison.png")
             plt.show()
+            for n in np.linspace(19.0, 21.5, 30):
+                cor = [s[5] for s in stat['corr'] if (s[9] > n - 0.1) * (s[9] < n + 0.1)]
+                print(n, np.mean(cor), np.std(cor))
 
         return stat
