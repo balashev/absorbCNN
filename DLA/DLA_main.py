@@ -254,6 +254,47 @@ class CNN_dla(CNN):
         return dla
             # print(len(dla))
 
+    def dla_catalog_compare(self, dla_num=1e5):
+        """
+        Compare new catalog with Noterdaeme
+        """
+        DLAs = [[],[]]
+        num_dla_diff = [0,0]
+        avg_pos_div = []
+        avg_N_div = []
+        noter = np.genfromtxt(self.dla_cat_file, skip_header=32, names=True, usecols=(0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12), dtype='U9, <i8, <i8, <i8, U5, U4, <f8, <f8, <f8, <f8, <f8')
+        self.cat.open()
+        q = self.cat.cat['meta/qso'][...]
+
+        for ind in self.d.get_inds(dset='full'):
+            self.d.open()
+            spec = self.d.get_spec(inds=[ind])[0]
+            inds = self.d.get('inds', dset='full')[:]
+            labels_valid = np.stack((self.d.get('flag', dset='full')[inds==ind], self.d.get('pos', dset='full')[inds==ind], self.d.get('logN', dset='full')[inds==ind]), axis=-1)
+            score = self.cnn.model.evaluate(spec, {'ide': labels_valid, 'red': labels_valid, 'col': labels_valid})
+            
+            if score[-3] > 0 or score[-2] > 0:
+                name = '{0:05d}_{1:05d}_{2:04d}'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
+                DLAs[0].append(name)
+            if len(DLAs[0]) > dla_num:
+                break
+
+        for ind, q in enumerate(noter):
+            name = '{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBER'])
+            DLAs[1].append(name)
+
+        for i in DLAs[0]:
+            if i not in DLAs[1]:
+                num_dla_diff[0] += 1
+        for i in DLAs[1]:
+            if i not in DLAs[0]:
+                num_dla_diff[1] += 1
+
+
+        # print(DLAs[0])
+        # print(DLAs[1])
+        print('Catalog DLAs: {} \n Noterdaeme DLAs: {} \n DLAs only in Catalog: {} \n DLAs only in Noterdaeme: {} \n '.format(len(DLAs[0]), len(DLAs[1]), num_dla_diff[0], num_dla_diff[1]))
+
     def dla_catalog_stats(self, kind=['number_count_total', 'number_count_cols', 'number_count_redshifts', 'compare_cols']):
         """
         Calculate different statistics of the false positives/negatives, results of the CNN, etc
