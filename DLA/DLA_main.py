@@ -254,12 +254,14 @@ class CNN_dla(CNN):
         return dla
             # print(len(dla))
 
-    def dla_catalog_compare(self, dla_num=1e5):
+    def dla_catalog_compare(self, dla_num=1e5, trashold=0):
         """
         Compare new catalog with Noterdaeme
         """
         DLAs = [[],[]]
         num_dla_diff = [0,0]
+        diff_DLAs = [[],[]]
+        num_windows = []
         avg_pos_div = []
         avg_N_div = []
         noter = np.genfromtxt(self.dla_cat_file, skip_header=32, names=True, usecols=(0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12), dtype='U9, <i8, <i8, <i8, U5, U4, <f8, <f8, <f8, <f8, <f8')
@@ -273,9 +275,10 @@ class CNN_dla(CNN):
             labels_valid = np.stack((self.d.get('flag', dset='full')[inds==ind], self.d.get('pos', dset='full')[inds==ind], self.d.get('logN', dset='full')[inds==ind]), axis=-1)
             score = self.cnn.model.evaluate(spec, {'ide': labels_valid, 'red': labels_valid, 'col': labels_valid})
             
-            if score[-3] > 0 or score[-2] > 0:
+            if score[-3] + score[-2] > trashold:
                 name = '{0:05d}_{1:05d}_{2:04d}'.format(q[ind]['PLATE'], q[ind]['MJD'], q[ind]['FIBERID'])
                 DLAs[0].append(name)
+                num_windows.append(score[-3] + score[-2])
             if len(DLAs[0]) > dla_num:
                 break
 
@@ -283,12 +286,15 @@ class CNN_dla(CNN):
             name = '{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBER'])
             DLAs[1].append(name)
 
-        for i in DLAs[0]:
+        for i, w in zip(DLAs[0], num_windows):
             if i not in DLAs[1]:
                 num_dla_diff[0] += 1
+                diff_DLAs[0].append(i)
+                print('System {} was found only in new catalog with {} windows'.format(i, w))
         for i in DLAs[1]:
             if i not in DLAs[0]:
                 num_dla_diff[1] += 1
+                diff_DLAs[1].append(i)
 
 
         # print(DLAs[0])
