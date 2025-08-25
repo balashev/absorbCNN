@@ -13,6 +13,11 @@ class dla_data(data_structure):
         self.window = window
         self.shape = (self.window, )
 
+    def get_labels(self, dset='train', batch=None, ind_batch=0):
+        return np.stack((self.get('flag', dset=dset, batch=batch, ind_batch=ind_batch),
+                         self.get('pos', dset=dset, batch=batch, ind_batch=ind_batch) / 10,
+                        (self.get('logN', dset=dset, batch=batch, ind_batch=ind_batch) - self.parent.N_range[0]) / (self.parent.N_range[1] - self.parent.N_range[0])),
+                        axis=-1)
 
     def make_mask(self, ind, z_qso=0, dlas=[], dla_window=60):
         """
@@ -32,12 +37,11 @@ class dla_data(data_structure):
         mask_dla = np.zeros_like(s['loglam'], dtype=bool)
 
         # get position of QSO Lya line and mask redward Lya with proximate indent:
-        v_prox = 2000  # in km/s
-        qso_pos = int((np.log10(self.parent.lya * (1 + z_qso) * (1 - v_prox / 3e5)) - s['loglam'][0]) * 1e4)
+        qso_pos = int((np.log10(self.parent.lya * (1 + z_qso) * (1 - self.parent.v_proximate / 3e5)) - s['loglam'][0]) * 1e4)
         mask[max(0, qso_pos):] = False
 
         # masked Ly_cutoff region:
-        mask[:max(0, int((np.log10(self.parent.lyc * (1 + z_qso)) - s['loglam'][0]) * 1e4))] = False
+        mask[:max(0, int((np.log10(self.parent.lyc * (1 + z_qso) * (1 + self.parent.v_proximate / 3e5)) - s['loglam'][0]) * 1e4))] = False
 
         # mask dla associated pixels:
         for dla in dlas:
@@ -55,7 +59,7 @@ class dla_data(data_structure):
         mask_dla *= mask
         return mask, mask_dla
 
-    def make(self, ind=None, num=None, valid=0.3, dropout=0.7, dropout_dla=0.3, start=0):
+    def make(self, ind=None, num=None, valid=0.2, dropout=0.8, dropout_dla=0.5, start=0):
         """
         Make data structure
         parameters:
@@ -79,32 +83,36 @@ class dla_data(data_structure):
             self.create(dset='valid')
             self.create(dset='train')
 
-        print('Running make catalog script:')
+        print('Making data catalog from spectra database:')
         for i in range(start, start + num):
-            # print(i)
+            #print(i, meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
 
             if ind == None or ind == i:
-                if self.check_bads(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID']):
-                    print('bads:', i, meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
-                if (meta[i]['BI_CIV'] < 100) * (
-                not self.check_bads(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])):
+                #if self.check_bads(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID']):
+                #    print('bads:', i, meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
+                if (meta[i]['BI_CIV'] < 1) * (not self.check_bads(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])):
                     if i * 10 % num == 0:
                         print(i, ' of ', num)
                     s = self.parent.cat[i]
-                    specs, reds, inds, flags, pos, logN = [], [], [], [], [], []
+                    #print(s.dtype)
                     # print('dla', meta[i]['dla'])
-                    if meta[i]['dla']:
+                    if meta[i]['DLA']:
                         self.parent.cat.open()
-                        sdss_name1 = 'data/{0:05d}/{1:04d}/{2:05d}/'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])
-                        sdss_name2 = 'data/{0:05d}_{1:05d}_{2:04d}/'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
-                        # print(sdss_name2)
-                        if sdss_name1 in self.parent.cat.cat:
-                            dlas = self.parent.cat.cat['meta/{0:05d}/{1:04d}/{2:05d}/dla'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])][:]
-                        elif sdss_name2 in self.parent.cat.cat:
-                            dlas = self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
-                            # dlas = sdss.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
+                        if 0:
+                            sdss_name1 = 'data/{0:05d}/{1:04d}/{2:05d}/'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])
+                            sdss_name2 = 'data/{0:05d}_{1:05d}_{2:04d}/'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
+                            # print(sdss_name2)
+                            if sdss_name1 in self.parent.cat.cat:
+                                dlas = self.parent.cat.cat['meta/{0:05d}/{1:04d}/{2:05d}/dla'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])][:]
+                            elif sdss_name2 in self.parent.cat.cat:
+                                dlas = self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
+                                #dlas = sdss.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
                         else:
-                            print('meta/{0:05d}/{1:05d}/{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID']), ' vaporized in history')
+                            #print(self.parent.cat.cat[f"meta/{i}/dla"][:])
+                            if f"meta/{i}/DLA" in self.parent.cat.cat:
+                                dlas = self.parent.cat.cat[f"meta/{i}/DLA"][:]
+                            else:
+                                print(f'meta/{i}/DLA vaporized in history')
                         self.parent.cat.close()
                     else:
                         dlas = []
@@ -113,9 +121,12 @@ class dla_data(data_structure):
                         mask, mask_dla = [], []
                     else:
                         mask, mask_dla = self.make_mask(i, z_qso=meta[i]['Z'], dlas=dlas, dla_window=60)
-                    # print(i, mask, mask_dla)
-                    # print(i, np.sum(mask), np.sum(mask_dla), np.sum(mask_dla[mask]))
-                    if np.sum(mask) > 0:
+                    #print(i, mask, mask_dla)
+                    #print(i, np.sum(mask), np.sum(mask_dla), np.sum(mask_dla[mask]))
+                    #if np.any(~np.isfinite(s['flux'])):
+                    #    print(i, s['flux'])
+                    #    self.parent.dla_plot_spec(i)
+                    if np.sum(mask) > 0 and np.all(np.isfinite(s['flux'])):
                         im = np.where(np.diff(np.insert(mask, 0, 0)) != 0)[0]
                         flux = np.asarray(s['flux'][max(0, im[0] - int(self.window / 2)):min(len(s['flux']), im[-1] + int(self.window / 2))], dtype=np.float16)
                         stride = flux.strides[0]
@@ -146,7 +157,7 @@ class dla_data(data_structure):
                         else:
                             return specs, reds, flag, pos, logN, inds
 
-    def plot_spec(self, ind, add_info=True):
+    def plot_spec(self, ind, add_info=True, z=None):
         """
         Make plot of the spectrum by index
         parameters:
@@ -157,11 +168,13 @@ class dla_data(data_structure):
         s = self.parent.cat[ind]
         self.parent.cat.open()
         meta = self.parent.cat.cat['meta/qso'][ind]
-        print(meta['PLATE'], meta['MJD'], meta['FIBERID'])
+        #print(meta['PLATE'], meta['MJD'], meta['FIBERID'])
+        #name = 'meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])
+        name = f"meta/{ind}"
         z_qso = meta['Z']  # sdss.cat['meta/qso']['Z_VI'][ind]
-        print(z_qso)
-        i = int((np.log10(self.parent.lya * (1 + z_qso) * (1 - 3e3 / 3e5)) - s['loglam'][0]) * 1e4)
-        if i > 0 and meta['BI_CIV'] < 100:
+        #print(z_qso)
+        i = int((np.log10(self.parent.lya * (1 + z_qso) * (1 - self.parent.v_proximate / 3e5)) - s['loglam'][0]) * 1e4)
+        if i > 0 and meta['BI_CIV'] < 1:
             xlims = [10 ** s['loglam'][0], 10 ** s['loglam'][i + 200]]
             if add_info:
                 fig, axs = plt.subplots(4, 1, gridspec_kw={'height_ratios': [1, 1, 1, 5]}, figsize=(14, 5), dpi=160)
@@ -173,8 +186,7 @@ class dla_data(data_structure):
                 # print(sdss.cat['meta/{0:05d}_{1:04d}_{2:05d}/dla'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:].dtype)
                 # pos = x[np.where((dla_pos[m] == 0) * dla_flags[m])[0][0]] if any(dla_flags[m]) else 0
                 dla_flag, dla_pos, dla_NHI = self.get('flag')[m], self.get('pos')[m], self.get('logN')[m]
-                pos = x[np.where(dla_flag == 1)[0][0]] * 10 ** (
-                            -dla_pos[np.where(dla_flag == 1)[0][0]] * 0.0001) if any(dla_flag) else 0
+                pos = x[np.where(dla_flag == 1)[0][0]] * 10 ** (-dla_pos[np.where(dla_flag == 1)[0][0]] * 0.0001) if any(dla_flag) else 0
                 for l, y, mask, c, title in zip(range(3), [dla_flag, dla_pos, dla_NHI],
                                                 [dla_flag > -1, dla_flag > -1, dla_NHI[dla_flag > -1] > 0],
                                                 ['tomato', 'dodgerblue', 'forestgreen'],
@@ -182,19 +194,19 @@ class dla_data(data_structure):
                     axs[l].plot(x[mask], y[mask], 'o', c=c)
                     axs[l].text(0.02, 0.9, title, color=c, ha='left', va='top', transform=axs[l].transAxes, zorder=3)
                     axs[l].set_xlim(xlims)
+                    if z is not None:
+                        axs[l].axvline(self.parent.lya * (1 + z), ls='-', color='dodgerblue')
+
                     if any(dla_flag):
-                        for z in self.parent.cat.cat[
-                                     'meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta['PLATE'], meta['MJD'],
-                                                                               meta['FIBERID'])][:]['z_abs']:
+                        for z in self.parent.cat.cat[name+'/DLA'][:]['z_abs']:
                             axs[l].axvline(self.parent.lya * (1 + z), ls='--', color='tomato')
+
                 axs[1].axhline(0, ls='--', color='k', lw=0.5)
                 ax = axs[3]
                 if any(dla_flag):
                     # meta/{0:05d}_{1:04d}_{2:05d}/ 05 05 04
                     # data/{0:05d}/{1:04d}/{2:05d}/ 05 04 05
-                    for z in self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta['PLATE'], meta['MJD'],
-                                                                                           meta['FIBERID'])][:][
-                        'z_abs']:
+                    for z in self.parent.cat.cat[name+'/DLA'][:]['z_abs']:
                         ax.axvline(self.parent.lya * (1 + z), ls='--', color='tomato')
                         ax.axvline(self.parent.lyb * (1 + z), ls=':', color='violet')
             ax.plot(10 ** s['loglam'][:i + 200], s['flux'][:i + 200], 'k')
@@ -205,9 +217,7 @@ class dla_data(data_structure):
             ax.set_ylim([-m * 0.1, m * 1.1])
             ax.set_xlim(xlims)
             ax.axvspan(10 ** s['loglam'][i], 10 ** s['loglam'][-1], color='w', alpha=0.5, zorder=2)
-            ax.axvspan(10 ** s['loglam'][0],
-                       10 ** s['loglam'][max(0, int((np.log10(911 * (1 + z_qso)) - s['loglam'][0]) * 1e4))], color='w',
-                       alpha=0.5, zorder=2)
+            ax.axvspan(10 ** s['loglam'][0], 10 ** s['loglam'][max(0, int((np.log10(911 * (1 + z_qso)) - s['loglam'][0]) * 1e4))], color='w', alpha=0.5, zorder=2)
             fig.subplots_adjust(wspace=0, hspace=0)
         else:
             fig, ax = plt.subplots(figsize=(14, 5), dpi=160)
@@ -215,36 +225,46 @@ class dla_data(data_structure):
             m = np.quantile(s['flux'], 0.99)
             ax.set_ylim([-m * 0.1, m * 1.1])
             if meta['BI_CIV'] > 100:
-                ax.text(0.5, 0.5, "BAL QSO", ha='center', va='center', color='red', alpha=0.3, fontsize=100,
-                        transform=ax.transAxes)
+                ax.text(0.5, 0.5, "BAL QSO", ha='center', va='center', color='red', alpha=0.3, fontsize=100, transform=ax.transAxes)
             else:
-                ax.text(0.5, 0.5, "OUT OF RANGE", ha='center', va='center', color='red', alpha=0.3, fontsize=100,
-                        transform=ax.transAxes)
+                ax.text(0.5, 0.5, "OUT OF RANGE", ha='center', va='center', color='red', alpha=0.3, fontsize=100, transform=ax.transAxes)
 
-        ax.text(0.5, 0.9, f"{ind}: {meta['PLATE']} {meta['MJD']} {meta['FIBERID']}, z_qso={round(meta['Z'], 3)}",
-                ha='center', va='top', transform=ax.transAxes, zorder=3)
+        ax.text(0.5, 0.9, f"{ind}: {meta['PLATE']} {meta['MJD']} {meta['FIBERID']}, z_qso={round(meta['Z'], 3)}", ha='center', va='top', transform=ax.transAxes, zorder=3)
 
         return fig, ax
 
-    def plot_preds(self, ind, fig=None):
+    def plot_preds(self, ind, fig=None, abs=True):
         """
         Plot the results of the CNN search on the spectrum
         parameters:
             -  ind     :  index of the spectrum
             -  fig     :  figure to plot. If None, that it will be created using self.plot_spec(ind)
         """
+        print("plot spectrum and preditions for", ind)
+
         if fig == None:
             fig, ax = self.plot_spec(ind, add_info=True)
         else:
             ax = fig.get_axes()
+
         specs, reds, *other = self.get_spec(ind)
 
         if self.parent.cnn != None:
-            preds = self.parent.cnn.model.predict(specs)
-
+            preds = np.asarray(self.parent.cnn.model.predict(specs))
+            preds = preds.reshape(3, len(preds[0]))
             x = (1 + reds) * self.parent.lya
             fig.axes[0].plot(x, preds[0], '--k')
-            fig.axes[1].plot(x, preds[1], '--k')
-            fig.axes[2].plot(x, preds[2], '--k')
+            fig.axes[1].plot(x, preds[1] * 10, '--k')
+            m = preds[0] > 0.1
+            fig.axes[2].plot(x[m], preds[2][m] * (self.parent.N_range[1] - self.parent.N_range[0]) + self.parent.N_range[0], 'ok')
+
+        if abs:
+            res = self.get_abs_from_CNN(ind, plot=True)
+            for r in res:
+                print(r)
+                for axs in fig.axes:
+                    axs.axvspan((r[2] + r[3] + 1) * self.parent.lya, (r[2] + r[4] + 1) * self.parent.lya, color='gray', lw=0, alpha=0.3)
+                fig.axes[2].axhspan(r[5] + r[6], r[5] + r[7], color='gray', lw=0, alpha=0.3)
+            #print(res)
 
         return fig, ax

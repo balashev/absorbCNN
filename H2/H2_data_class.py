@@ -203,7 +203,7 @@ class h2_data(data_structure):
         if self.parent.cnn != None:
             preds = self.parent.cnn.model.predict(specs)
 
-            x = (1 + reds) * self.h2bands['L0-0']
+            x = (1 + reds) * 1215.67 #self.h2bands['L0-0']
             fig.axes[0].plot(x, preds[0], '--k')
             fig.axes[1].plot(x, preds[1], '--k')
             fig.axes[2].plot(x, preds[2], '--k')

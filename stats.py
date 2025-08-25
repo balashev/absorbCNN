@@ -37,6 +37,7 @@ class distr1d():
 
     def kde(self, bandwidth='scott'):
         kde = gaussian_kde(self.x, bw_method=bandwidth)
+        self.x_ = np.copy(self.x)
         x = np.linspace(np.min(self.x), np.max(self.x), np.max([100, int(np.sqrt(len(self.x)))]))
         self.y = kde(x)
         self.x = x
@@ -56,7 +57,7 @@ class distr1d():
     def level(self, x, level):
         return self.inter(x) - level
 
-    def plot(self, x=None, conf=None, kind='center', color='orangered', ax=None, xlabel=None, ylabel=None, fontsize=16, alpha=0.3):
+    def plot(self, x=None, conf=None, kind='center', color='orangered', ax=None, xlabel=None, ylabel=None, fontsize=16, alpha=0.3, sample=True, savefig=None):
         if ax is None:
             fig, ax = plt.subplots()
         if x is None:
@@ -76,6 +77,14 @@ class distr1d():
             ax.set_ylabel('pdf', fontsize=fontsize)
         else:
             ax.set_ylabel(ylabel, fontsize=fontsize)
+
+        if sample:
+            xmax = np.max(self.inter(self.x_))
+            for x in self.x_:
+                ax.plot([x, x], [0, xmax / 2], lw=0.5, color='k')
+
+        if savefig != None:
+            fig.savefig(savefig)
 
         return ax
 

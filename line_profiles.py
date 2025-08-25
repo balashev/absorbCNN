@@ -85,21 +85,17 @@ def convolve_res(l, f, R):
     f = 1 - f
 
     il = 0
-    for i, x in enumerate(l):
-        sig = x / R / 2.355
+    for i in range(n):
+        sig = l[i] / R / 2.355
         k = il
-        while l[k] < x - delta * sig:
+        while l[k] < l[i] - delta * sig:
             k += 1
         il = k
         #s = f[il] * (1 - errf_v2((x - l[il]) / np.sqrt(2) / sig)) / 2
         s = 0
-        # ie = il + 30
-        while k < n - 1 and l[k + 1] < x + delta * sig:
-            # s += f[k] * 1 / np.sqrt(2 * np.pi) / sig * np.exp(-.5 * ((l[k] - x) / sig) ** 2) * d[k]
-            s += (f[k + 1] * gauss(l[k + 1] - x, sig) + f[k] * gauss(l[k] - x, sig)) / 2 * (l[k + 1] - l[k])
-            # print(i, k , gauss(l[k] - x, sig))
+        while k < n - 1 and l[k + 1] < l[i] + delta * sig:
+            s += (f[k + 1] * gauss(l[k + 1] - l[i], sig) + f[k] * gauss(l[k] - l[i], sig)) / 2 * (l[k + 1] - l[k])
             k += 1
-        # input()
         #s += f[k] * (1 - errf_v2(np.abs(l[k] - x) / np.sqrt(2) / sig)) / 2
         fc[i] = s
 
