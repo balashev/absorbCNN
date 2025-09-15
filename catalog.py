@@ -282,7 +282,7 @@ class catalog(list):
             name = 'data/{0:05d}_{1:05d}_{2:04d}'.format(q['PLATE'], q['MJD'], q['FIBERID'])
             #print(name)
             if name not in self.cat:
-                #print(i, name, name in self.cat)
+                print(i, name, name in self.cat)
                 if source == 'web':
                     res = self.download(ra=q['RA'], dec=q['DEC'], plate=q['PLATE'], MJD=q['MJD'], fiber=q['FIBERID'])
                 else:
