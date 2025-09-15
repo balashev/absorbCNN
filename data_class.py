@@ -2,10 +2,11 @@ import h5py
 import numpy as np
 import os
 from scipy.signal import argrelextrema
+from sklearn.cluster import MeanShift
 import warnings
 
 from .stats import distr1d
-from .tools import Timer
+from .utils import Timer
 class data_structure(list):
     """
     This class contains data structure that is used to DLA search.
@@ -21,7 +22,7 @@ class data_structure(list):
         self.parent = parent
         self.shape = (0, )
         self.attrs = ['specs', 'reds', 'flag', 'pos', 'logN', 'inds']
-        self.dtype = {'specs': np.float32, 'reds': np.float32, 'flag': bool, 'pos': int, 'logN': np.float32,
+        self.dtype = {'specs': self.parent.dt, 'reds': self.parent.dt, 'flag': bool, 'pos': int, 'logN': self.parent.dt,
                       'inds': int, 'labels': [('flag', np.bool_), ('pos', np.int_), ('logN', np.single)]}
         self.timer = Timer() if timing else None
         self.filename = filename
@@ -31,7 +32,11 @@ class data_structure(list):
         """
         Mark bad SDSS spectra, that crush routine
         """
-        self.bads = [[6190, 56210, 566], [7879, 57359, 980], [7039, 56572, 720], [7622, 56987, 660]]
+        if 1:
+            self.bads = [[6190, 56210, 566], [7879, 57359, 980], [7039, 56572, 720], [7622, 56987, 660], [7449, 56740, 541], [5731, 56363, 507]] #, [5390, 56002, 232]]
+        else:
+            self.bads = np.genfromtxt("sdss_mask.txt", unpack=True, names=["plate", "mjd", "fiberid", "comment"])
+            #self.bads = [[x[0], x[1], x[2]] for x in d]
         self.corr = [6190, 56210], [6190, 56210]
 
     def create(self, dset='full'):
@@ -121,13 +126,13 @@ class data_structure(list):
 
     def open(self):
         """
-        Open data file. It should be appropriatly closed, before next use
+        Open data file. It should be appropriately closed, before next use
         """
         self.data = h5py.File(self.filename, 'r+')
 
     def close(self):
         """
-        Close data file. It should be appropriatly closed, before next use
+        Close data file. It should be appropriately closed, before next use
         """
         self.data.close()
 
@@ -210,24 +215,25 @@ class data_structure(list):
 
             x = self.data['full/specs']
 
-            self.append_mask(dset='train', mask=m, randomize=True) #specs=self.data['full/specs'][m,:][m2], reds=self.data['full/reds'][m][m2], inds=self.data['full/inds'][m][m2], flag=self.data['full/flag'][m][m2], dla_pos=self.data['full/dla_pos'][m][m2], dla_NHI=self.data['full/dla_NHI'][m][m2])
+            self.append_mask(dset='train', mask=m, randomize=True)
             if self.timer != None:
                 self.timer.time(f'append {i}')
 
-        #for attr in self.attrs:
-        #    self.data.create_dataset('/'.join(dset, attr), shape=(0,) + (self.window,) * (attr == 'specs'), dtype=self.dtype[attr], maxshape=(None,) + (self.window,) * (attr == 'specs'))
         self.valid = np.where(self.valid)[0]
 
     def check_bads(self, plate, mjd, fiberid):
-        return any([(b[0]== plate) * (b[1] == mjd) * (b[2] == fiberid) for b in self.bads]) + self.check_corr(plate, mjd, fiberid)
+        #print("check_bads:", (plate == self.bads["plate"]) * (mjd == self.bads["mjd"]) * (fiberid == self.bads["fiberid"]), self.check_corr(plate, mjd, fiberid))
+        #return (plate == self.bads["plate"]) * (mjd == self.bads["mjd"]) * (fiberid == self.bads["fiberid"]) + self.check_corr(plate, mjd, fiberid)
+        #return any([(b[0]== plate) * (b[1] == mjd) * (b[2] == fiberid) for b in self.bads]) + self.check_corr(plate, mjd, fiberid)
         #return any([(b[0]== plate) * (b[1] == mjd) for b in self.bads])
+        return self.check_corr(plate, mjd, fiberid)
 
     def check_corr(self, plate, mjd, fiberid):
         return any([(b[0]== plate) * (b[1] == mjd) for b in self.corr])
 
     def get_inds(self, flag=False, dset='full'):
         """
-        Get indixes of the spectra from the data strucutre
+        Get indixes of the spectra from the data structure
         """
         if flag:
             return np.unique(self.get('inds', dset=dset)[self.get('flag', dset=dset) == 1])
@@ -254,7 +260,7 @@ class data_structure(list):
             return self.make(self.parent.cat, ind=inds, dropout=0.0, dropout_dla=0.0)
 
 
-    def get_abs_from_CNN(self, ind, reds=None, preds=None, plot=False, threshold=0.05, lab=1215.67, timer=False):
+    def get_abs_from_CNN(self, ind, reds=None, preds=None, plot=False, threshold=None, timer=False):
         """
         Get the DLA catalog from the spectrum using the statistics of the CNN results.
         parameters:
@@ -264,53 +270,130 @@ class data_structure(list):
         if timer:
             t = Timer('cat')
 
+        if threshold is None:
+            threshold = self.parent.threshold
+
         if reds is None and preds is None:
             specs, reds, *other = self.get_spec(ind)
+            #print(spec)
             if timer:
                 t.time('get')
             if self.parent.cnn != None:
-                preds = self.parent.cnn.model.predict(specs)
+                preds = self.parent.cnn.predict(specs)
+                preds[1] = preds[1] * self.parent.abs_window
+                preds[2] = preds[2] * (self.parent.N_range[1] - self.parent.N_range[0]) + self.parent.N_range[0]
             else:
                 warnings.warn("There is no CNN model to predict", UserWarning)
             if timer:
                 t.time('pred')
-        abs = []
+        abs = self.get_abs(preds, reds, ind=ind, threshold=threshold)
+        if timer:
+            t.time('stats')
+        return abs
+
+    def get_abs(self, preds, reds, ind=0, threshold=0.5, clean=False):
+        #print("get abs for ind:", ind)
         m = (preds[0] > threshold).flatten()
+        #print(preds[0].flatten())
+        zd = (reds + 1) * 10 ** (-preds[1].flatten() * 1e-4) - 1
+        abs = []
         if sum(m) > 3:
-            zd = (1 + reds) + 10 ** (preds[1].flatten() * 1e-4) / lab - 1
+            ms = MeanShift(bandwidth=self.parent.abs_window, bin_seeding=True)
+            inds = np.where(m)[0]
+            X = np.array(list(zip(inds, np.zeros(len(inds)))), dtype=int)
+
+            ms.fit(X)
+            labels = ms.labels_
+            #print(labels)
+            n_clusters_ = len(np.unique(labels))
+            zm = [np.median(zd[inds[labels == k]]) for k in range(n_clusters_)]
+            #print(zm)
+
+            #print(n_clusters_)
+
+            l_series = []
+            for k in reversed(np.argsort(zm)):
+                #print(k, zm[k])
+                mz = inds[labels == k]
+                #print("cluster {0}: {1}".format(k, np.median(zd[mz])))
+                quant = np.quantile(zd[mz], [0.159, 0.5, 0.841], weights=preds[0].flatten()[mz], method='inverted_cdf')
+                #print(quant)
+                #print([[(l[0] > quant[2]), (l[1] < quant[0]), (l[0] > quant[2]) + (l[1] < quant[0])] for l in l_series])
+                iz = np.argmin(np.abs(quant[1] - zd))
+                prob = np.mean(preds[0].flatten()[np.max([0, iz-60]):np.min([iz+60, len(preds[0])])]) #
+                prob = np.median(preds[0][mz])
+                #print(iz, np.median(preds[0][mz]), np.mean(preds[0].flatten()[np.max([0, iz-30]):np.min([iz+30, len(preds[0])])]), preds[0].flatten()[np.max([0, iz-30]):np.min([iz+30, len(preds[0])])])
+                if prob > threshold:
+                    if ~clean or np.all([(l[0] > quant[2]) + (l[1] < quant[0]) for l in l_series]):
+                        #print("not in lyman series")
+                        abs.append([ind, prob]) #np.median(preds[0][mz])])
+                        #print(ind, self.parent.cat.cat[f'meta/{ind}/SNR_DLA'])
+                        #abs[-1].extend([self.parent.cat.cat[f'meta/{ind}/SNR_DLA']])
+                        abs[-1].extend([quant[1], quant[0] - quant[1], quant[2] - quant[1]])
+                        if clean:
+                            l_series.extend([[(quant[1] + 2 * (quant[0] - quant[1]) + 1) * self.parent.lyb / self.parent.lya - 1, (quant[1] + 2 * (quant[2] - quant[1]) + 1) * self.parent.lyb / self.parent.lya - 1],
+                                             [(quant[1] + 2 * (quant[0] - quant[1]) + 1) * self.parent.lyc / self.parent.lya - 1, (quant[1] + 2 * (quant[2] - quant[1]) + 1) * self.parent.lyc / self.parent.lya - 1]
+                                             ])
+                        if len(preds) > 2:
+                            N = preds[2].flatten()[mz]
+                            quant = np.quantile(N, [0.159, 0.5, 0.841], weights=preds[0].flatten()[mz], method='inverted_cdf')
+                            abs[-1].extend([quant[1], quant[0] - quant[1], quant[2] - quant[1]])
+
+                #print(l_series)
+                #print(abs)
+        return abs
+
+
+    def get_abs_pdf(self, preds, reds, ind=0, plot=False, threshold=0.8, lab=1215.67):
+        m = (preds[0] > threshold).flatten()
+        abs = []
+        if sum(m) > 3:
+            print(preds[1].flatten()[m], reds[m])
+            zd = (reds + 1) *  10 ** (-preds[1].flatten() * 1e-4) - 1
+            print(zd[m])
             z = distr1d(zd[m], bandwidth=0.2)
             z.stats()
             if plot:
-                z.plot()
-            #zint = [min(zd)] + list(z.x[argrelextrema(z.inter(z.x), np.greater)[0]]) + [max(zd)]
+                if not os.path.exists(self.parent.QC_folder + "/spec/"):
+                    os.mkdir(self.parent.QC_folder + "/spec/")
+                ax = z.plot(savefig=self.parent.QC_folder + f"/spec/{ind}_z.png")
             zint = z.x[argrelextrema(z.inter(z.x), np.greater)]
             print(zint)
             for i in range(len(zint)):
                 print(i, zint[i])
-                mz = (z.x > zint[i] - 0.1) * (z.x < zint[i] + 0.1)
+                mz = (z.x > zint[i] - 0.01) * (z.x < zint[i] + 0.01)
                 if max([z.inter(x) for x in z.x[mz]]) > z.inter(z.point) / 3:
-                    mz = (zd > zint[i] - 0.02) * (zd < zint[i] + 0.02) * np.abs(preds[1].flatten()) > 0.1
-                    print(sum(mz))
-                    if sum(mz) > 3 and (len(abs) == 0 or np.min([np.abs(a[1] - np.median(preds[0][mz])) for a in abs]) > 0.1):
-                        #print(sum(mz))
+                    mz = (zd > zint[i] - 0.02) * (zd < zint[i] + 0.02) * (np.abs(preds[0].flatten()) > threshold)
+                    #print(sum(mz), [np.abs(a[1] - np.median(preds[0][mz])) for a in abs])
+                    if sum(mz) > 3 and (len(abs) == 0 or np.min([np.abs(a[1] - np.median(preds[0][mz])) for a in abs]) > 0.05):
                         abs.append([ind, np.median(preds[0][mz])])
-                        z1 = distr1d(zd[mz])
-                        z1.kde(bandwidth=0.2)
-                        z1.stats()
-                        if plot:
-                            z1.plot()
-                        #abs[-1].extend([z1.point] + list(z1.interval - z1.point))
-                        abs[-1].extend([np.median(zd[mz])] + list(z1.interval - np.median(zd[mz])))
+                        #z_point = np.sum(zd[mz] * preds[0].flatten()[mz]) / np.sum(preds[0].flatten()[mz])
+                        if 1:
+                            quant = np.quantile(zd[mz], [0.159, 0.5, 0.841], weights=preds[0].flatten()[mz], method='inverted_cdf')
+                            abs[-1].extend([quant[1], quant[0] - quant[1], quant[2] - quant[1]])
+                        else:
+                            z1 = distr1d(zd[mz])
+                            z1.kde(bandwidth=0.2)
+                            z1.stats()
+                            if plot:
+                                z1.plot(savefig=self.parent.QC_folder + f"/spec/{ind}_z_{i}.png")
+                            abs[-1].extend([z1.point] + list(z1.interval - z1.point))
+                        # abs[-1].extend([np.median(zd[mz])] + list(z1.interval - np.median(zd[mz])))
 
                         if len(preds) > 2:
+                            # N = preds[2].flatten()[mz] * preds[0].flatten()[mz] / np.sum(preds[0].flatten()[mz])
                             N = preds[2].flatten()[mz]
-                            N = distr1d(N)
-                            N.stats()
-                            if plot:
-                                N.plot()
-                            abs[-1].extend([N.point] + list(N.interval - N.point))
-                        print(i, z1.latex(f=4), N.latex(f=2))
-            if timer:
-                t.time('stats')
-
+                            #print(N, preds[0].flatten()[mz])
+                            if 1:
+                                quant = np.quantile(N, [0.159, 0.5, 0.841], weights=preds[0].flatten()[mz], method='inverted_cdf')
+                                #print(quant)
+                                #print([quant[1], quant[0] - quant[1], quant[2] - quant[1]])
+                                abs[-1].extend([quant[1], quant[0] - quant[1], quant[2] - quant[1]])
+                            else:
+                                N = distr1d(N)
+                                N.stats()
+                                if plot:
+                                    N.plot(savefig=self.parent.QC_folder + f"/spec/{ind}_N.png")
+                                abs[-1].extend([N.point] + list(N.interval - N.point))
+                        #print(i, abs[-1])
         return abs
