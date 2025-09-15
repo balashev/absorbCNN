@@ -6,6 +6,7 @@ import warnings
 
 from ..data_class import data_structure
 from ..line_profiles import H2abs, convolve_res
+from ..utils import gradient_fill
 
 
 class h2_data(data_structure):
@@ -29,6 +30,12 @@ class h2_data(data_structure):
         self.h2 = H2abs()
         self.h2bands = self.h2.get_bands(self.bands)
 
+    def get_labels(self, dset='train', batch=None, ind_batch=0):
+        return np.stack((self.get('flag', dset=dset, batch=batch, ind_batch=ind_batch),
+                         self.get('pos', dset=dset, batch=batch, ind_batch=ind_batch) / self.parent.abs_window,
+                         (self.get('logN', dset=dset, batch=batch, ind_batch=ind_batch) - self.parent.N_range[0]) / (self.parent.N_range[1] - self.parent.N_range[0])
+                         ), axis=-1)
+
     def make_mask(self, ind, z_qso=0):
         """
         Calculate spectral mask to use during the creation of the data structure
@@ -36,7 +43,6 @@ class h2_data(data_structure):
             -  ind           :  index of the spectra to use
             -  z_qso         :  the redshift of the quasar
             -  dlas          :  array of the dlas, to mask the data
-            -  dla_windows   :  the size of the avoidance region around DLA
         """
         # print(ind)
         s = self.parent.cat[ind]
@@ -47,14 +53,14 @@ class h2_data(data_structure):
         mask_dla = np.zeros_like(s['loglam'], dtype=bool)
 
         # get position at QSO redshift and mark the region redwards:
-        v_prox = 3000  # in km/s
-        qso_pos = int((np.log10(self.parent.H2bands['L0-0'] * (1 + z_qso) * (1 - v_prox / 3e5)) - s['loglam'][0]) * 1e4)
+        qso_pos = int((np.log10(self.parent.H2bands['L0-0'] * (1 + z_qso) * (1 - self.v_proximate / 3e5)) - s['loglam'][0]) * 1e4)
         mask[max(0, qso_pos):] = False
 
         # masked Ly_cutoff region:
         mask[:max(0, int((np.log10(self.parent.lyc * (1 + z_qso)) - s['loglam'][0]) * 1e4))] = False
 
         return mask
+
     def make(self, ind=None, num=None, valid=0.3, dropout=0.7, dropout_h2=0.3, start=0, band='L5-0', snr_thres=2):
         print('make cat')
         self.parent.cat.open()
@@ -82,25 +88,18 @@ class h2_data(data_structure):
                     if i * 10 % num == 0:
                         print(i, ' of ', num)
                     s = self.parent.cat[i]
-                    if 'H2' in meta[i].dtype.names and meta[i]['H2']:
+                    if 'abs' in meta[i].dtype.names and meta[i]['abs']:
                         self.parent.cat.open()
-                        sdss_name1 = 'data/{0:05d}/{1:04d}/{2:05d}/'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])
-                        sdss_name2 = 'data/{0:05d}_{1:05d}_{2:04d}/'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])
-                        # print(sdss_name2)
-                        if sdss_name1 in self.parent.cat.cat:
-                            h2 = self.parent.cat.cat['meta/{0:05d}/{1:04d}/{2:05d}/H2'.format(meta[i]['PLATE'], meta[i]['FIBERID'], meta[i]['MJD'])][:]
-                        elif sdss_name2 in self.parent.cat.cat:
-                            h2 = self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
-                            # dlas = sdss.cat['meta/{0:05d}_{1:05d}_{2:04d}/dla'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID'])][:]
+                        if f"meta/{i}/abs" in self.parent.cat.cat:
+                            h2 = self.parent.cat.cat[f"meta/{i}/abs"][:]
                         else:
-                            print('meta/{0:05d}/{1:05d}/{2:04d}/H2'.format(meta[i]['PLATE'], meta[i]['MJD'], meta[i]['FIBERID']), ' vaporized in history')
+                            print(f'meta/{i}/abs vaporized in history')
                         self.parent.cat.close()
                     else:
                         h2 = []
                     #print(h2)
                     if s is not None:
-                        v_prox = -5000 # in km/s
-                        z_max = (1 + meta[i]['Z']) * (1 - v_prox / 3e5) - 1
+                        z_max = (1 + meta[i]['Z']) * (1 + self.parent.v_proximate / 3e5) - 1
                         m = 10 ** s['loglam'] < (1 + z_max) * self.h2bands['L0-0']
                         if np.sum(m) > 0:
                             snr = pd.DataFrame(np.sqrt(1 / s['ivar'][m]) / s['flux'][m]).rolling(window=10).mean().fillna(method='bfill').fillna(method='ffill')
@@ -187,30 +186,48 @@ class h2_data(data_structure):
         ax[-1].imshow(specs[pos, :, :].transpose())
         return fig, ax
 
-    def plot_preds(self, ind, fig=None):
+    def plot_preds(self, ind, fig=None, abs=True):
         """
         Plot the results of the CNN search on the spectrum
         parameters:
             -  ind     :  index of the spectrum
             -  fig     :  figure to plot. If None, that it will be created using self.plot_spec(ind)
         """
+        print("plot spectrum and preditions for", ind)
+
         if fig == None:
             fig, ax = self.plot_spec(ind, add_info=True)
         else:
             ax = fig.get_axes()
+
         specs, reds, *other = self.get_spec(ind)
 
         if self.parent.cnn != None:
-            preds = self.parent.cnn.model.predict(specs)
-
-            x = (1 + reds) * 1215.67 #self.h2bands['L0-0']
+            preds = np.asarray(self.parent.cnn.predict(specs))
+            preds = preds.reshape(3, len(preds[0]))
+            x = (1 + reds) * self.parent.lya
             fig.axes[0].plot(x, preds[0], '--k')
-            fig.axes[1].plot(x, preds[1], '--k')
-            fig.axes[2].plot(x, preds[2], '--k')
+            fig.axes[1].plot(x, preds[1] * self.parent.abs_window, '--k')
+            m = preds[0] < 0.05
+            b = np.zeros_like(preds[0])
+            b[m] = np.nan
+            fig.axes[1].plot(x, preds[1] * self.parent.abs_window + b, '--k')
+            fig.axes[2].plot(x, preds[2] * (self.parent.N_range[1] - self.parent.N_range[0]) + self.parent.N_range[0] + b, 'ok')
+
+        if abs:
+            res = self.get_abs_from_CNN(ind, plot=True)
+            for r in res:
+                print(r)
+                for axs in fig.axes:
+                    axs.axvspan((r[2] + r[3] + 1) * self.parent.lya, (r[2] + r[4] + 1) * self.parent.lya, color='gray', lw=0, alpha=0.3)
+                    for l in self.parent.H2bands.values():
+                        axs.axvline((r[2] + 1) * l, ls='--', color='gray')
+                fig.axes[2].axhspan(r[5] + r[6], r[5] + r[7], color='gray', lw=0, alpha=0.3)
+            # print(res)
 
         return fig, ax
 
-    def plot_spec(self, ind, add_info=True):
+    def plot_spec(self, ind, add_info=True, z=None):
         """
         Make plot of the spectrum by index
         parameters:
@@ -221,22 +238,33 @@ class h2_data(data_structure):
         s = self.parent.cat[ind]
         self.parent.cat.open()
         meta = self.parent.cat.cat['meta/qso'][ind]
-        print(meta['PLATE'], meta['MJD'], meta['FIBERID'])
+        #print(meta['PLATE'], meta['MJD'], meta['FIBERID'])
+        name = f"meta/{ind}"
         z_qso = meta['Z']  # sdss.cat['meta/qso']['Z_VI'][ind]
-        print(z_qso)
+        #print(z_qso)
         i = int((np.log10(self.parent.lya * (1 + z_qso) * (1 + 5e3 / 3e5)) - s['loglam'][0]) * 1e4)
         if i > 0 and meta['BI_CIV'] < 100:
-            xlims = [10 ** s['loglam'][0] - 100, 10 ** s['loglam'][i + 200]]
-            print(xlims)
+            xlims = [10 ** s['loglam'][0] - 100, 10 ** s['loglam'][i + 100]]
             if add_info:
-                fig, axs = plt.subplots(4, 1, gridspec_kw={'height_ratios': [1, 1, 1, 5]}, figsize=(14, 5), dpi=160)
+                gs_top = plt.GridSpec(nrows=5, ncols=1, hspace=0.0, height_ratios=[1, 1, 1, 5, 3])  ## HSPACE for top 3
+                gs_base = plt.GridSpec(nrows=5, ncols=1, hspace=0.05)  ##HSPACE for last one
+                fig = plt.figure(figsize=(20, 8), dpi=160)
+                # The first 3 shared axes
+                ax = fig.add_subplot(gs_top[0, :])  # Create the first one, then add others...
+                other_axes = [fig.add_subplot(gs_top[i, :], sharex=ax) for i in range(1, 4)]
+                axs = [ax] + other_axes
+
+                # Hide shared x-tick labels
+                for ax in axs[:-1]:
+                    plt.setp(ax.get_xticklabels(), visible=False)
+
+                axs.append(fig.add_subplot(gs_base[-1, :]))
+                #fig, axs = plt.subplots(5, 1, gridspec_kw={'height_ratios': [1, 1, 1, 5]}, figsize=(14, 5), dpi=160)
             else:
-                fig, ax = plt.subplots(figsize=(14, 5), dpi=160)
+                fig, ax = plt.subplots(figsize=(20, 8), dpi=160)
             if add_info:
                 m = self.get('inds') == ind
-                x = (1 + self.get('reds')[m]) * self.h2bands['L0-0']
-                # print(sdss.cat['meta/{0:05d}_{1:04d}_{2:05d}/dla'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:].dtype)
-                # pos = x[np.where((dla_pos[m] == 0) * dla_flags[m])[0][0]] if any(dla_flags[m]) else 0
+                x = (1 + self.get('reds')[m]) * self.parent.lya #self.h2bands['L0-0']
                 flag, pos, logN = self.get('flag')[m], self.get('pos')[m], self.get('logN')[m]
                 #pos = x[np.where(flag == 1)[0][0]] * 10 ** (-pos[np.where(flag == 1)[0][0]] * 0.0001) if any(flag) else 0
                 for l, y, mask, c, title in zip(range(3), [flag, pos, logN], [flag > -1, flag > -1, logN[flag > -1] > 0],
@@ -245,42 +273,48 @@ class h2_data(data_structure):
                     axs[l].text(0.02, 0.9, title, color=c, ha='left', va='top', transform=axs[l].transAxes, zorder=3)
                     axs[l].set_xlim(xlims)
                     if any(flag):
-                        for z in self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:]['z_abs']:
+                        for z in self.parent.cat.cat[name + '/abs'][:]['z_abs']:
                             for b in self.h2bands.values():
                                 axs[l].axvline(b * (1 + z), ls='--', color='tomato')
                         axs[l].axvline(self.parent.lya * (1 + z), ls=':', color='brown')
                 axs[1].axhline(0, ls='--', color='k', lw=0.5)
                 ax = axs[3]
-            ax.plot(10 ** s['loglam'][:i + 200], s['flux'][:i + 200], 'k')
-            if any(flag):
-                for z in self.parent.cat.cat['meta/{0:05d}_{1:05d}_{2:04d}/H2'.format(meta['PLATE'], meta['MJD'], meta['FIBERID'])][:]['z_abs']:
-                    for b in self.h2bands.values():
-                        ax.axvline(b * (1 + z), ls='--', color='tomato')
-                ax.axvline(self.parent.lya * (1 + z), ls=':', color='brown')
-            m = np.nanmax(s['flux'][np.max([0, i - 50]):i + 50])
-            m = np.nanquantile(s['flux'][:i + 200], 0.95)
-            # print(m, s['flux'][:i+200])
-            ax.set_ylim([-m * 0.1, m * 1.1])
-            ax.set_xlim(xlims)
-            ax.axvspan(10 ** s['loglam'][i], 10 ** s['loglam'][-1], color='w', alpha=0.5, zorder=2)
-            ax.axvspan(10 ** s['loglam'][0],
-                       10 ** s['loglam'][max(0, int((np.log10(911 * (1 + z_qso)) - s['loglam'][0]) * 1e4))], color='w',
-                       alpha=0.5, zorder=2)
+            xlims_h2 = (xlims[0], xlims[0])
+            for ax in axs[3:]:
+                ax.plot(10 ** s['loglam'][:i + 200], s['flux'][:i + 200], 'k')
+                if any(flag):
+                    for z in self.parent.cat.cat[name + '/abs'][:]['z_abs']:
+                        for b in self.h2bands.values():
+                            ax.axvline(b * (1 + z), ls='--', color='tomato')
+                    ax.axvline(self.parent.lya * (1 + z), ls=':', color='brown')
+                m = np.nanmax(s['flux'][np.max([0, i - 50]):i + 50])
+                m = np.nanquantile(s['flux'][:i + 200], 0.95)
+                # print(m, s['flux'][:i+200])
+                ax.set_ylim([-m * 0.1, m * 1.1])
+                ax.axvspan(10 ** s['loglam'][i], 10 ** s['loglam'][-1], color='w', alpha=0.5, zorder=2)
+                ax.axvspan(10 ** s['loglam'][0], 10 ** s['loglam'][max(0, int((np.log10(911 * (1 + z_qso)) - s['loglam'][0]) * 1e4))], color='w', alpha=0.5, zorder=2)
 
-            res = self.get_abs_from_CNN(ind, plot=False, lab=self.h2bands['L0-0'])
-            for r in res[::-1]:
-                #print('cat:', r)
-                imax = int((np.log10(self.h2bands['L0-0'] * (1 + r[2]) * (1 - 3e3 / 3e5)) - s['loglam'][0]) * 1e4) + 200
-                imin = max(0, int((np.log10(self.h2bands['L3-0'] * (1 + r[2]) * (1 - 3e3 / 3e5)) - s['loglam'][0]) * 1e4))
-                x1 = np.linspace(10 ** s['loglam'][0], 10 ** s['loglam'][imax], imax * 3)
-                #print(imax)
-                x1, f = self.h2.calc_profile(x=x1, z=r[2], logN=r[5], b=5, j=6, T=100, exc='low')
-                #print(x1)
-                f = convolve_res(x1, f, 1800) * np.quantile(s['flux'][imin:imax], 0.90)
-                #print(f)
-                ax.plot(x1, f, lw=1.0)
-                ax.axvline(self.parent.lya * (1 + r[2]), ls='--', color='brown')
-            fig.subplots_adjust(wspace=0, hspace=0)
+                res = self.get_abs_from_CNN(ind, plot=False)
+                print(res)
+                for r in res[::-1]:
+                    #print('cat:', r)
+                    imax = int((np.log10(self.h2bands['L0-0'] * (1 + r[2]) * (1 - 3e3 / 3e5)) - s['loglam'][0]) * 1e4) + 200
+                    imin = max(0, int((np.log10(self.h2bands['L3-0'] * (1 + r[2]) * (1 - 3e3 / 3e5)) - s['loglam'][0]) * 1e4))
+                    x1 = np.linspace(10 ** s['loglam'][0], 10 ** s['loglam'][imax], imax * 3)
+                    #print(imax)
+                    print(x1[0], x1[1], xlims_h2)
+                    xlims_h2 = (max(x1[0], xlims_h2[0]), max(x1[-1], xlims_h2[1]))
+                    x1, f = self.h2.calc_profile(x=x1, z=r[2], logN=r[5], b=5, j=6, T=100, exc='low')
+                    #print(x1)
+                    f = convolve_res(x1, f, 1800) * np.quantile(s['flux'][imin:imax], 0.90)
+                    #print(f)
+                    #ax.plot(x1, f, lw=1.5)
+                    gradient_fill(x1, f, alpha=0.5, lw=1.5, zorder=1)
+                    ax.axvline(self.parent.lya * (1 + r[2]), ls='--', color='brown')
+                fig.subplots_adjust(wspace=0, hspace=0)
+            axs[3].set_xlim(xlims)
+            axs[4].set_xlim((xlims_h2[0], xlims_h2[1]))
+            ax = axs[-2]
         else:
             fig, ax = plt.subplots(figsize=(14, 5), dpi=160)
             ax.plot(10 ** s['loglam'], s['flux'], color='k')
@@ -293,8 +327,9 @@ class h2_data(data_structure):
                 ax.text(0.5, 0.5, "OUT OF RANGE", ha='center', va='center', color='red', alpha=0.3, fontsize=100,
                         transform=ax.transAxes)
 
-        label = f"{ind}: {meta['PLATE']} {meta['MJD']} {meta['FIBERID']}, z_qso={round(meta['Z'], 3)}"
+        fig.subplots_adjust(wspace=0, hspace=0)
 
-        ax.text(0.5, 0.9, label, ha='center', va='top', transform=ax.transAxes, zorder=3)
+        ax.text(0.5, 0.9, f"{ind}: {meta['PLATE']} {meta['MJD']} {meta['FIBERID']}, z_qso={round(meta['Z'], 3)}", ha='center', va='top',
+                transform=ax.transAxes, zorder=3, bbox=dict(facecolor='white', alpha=1, edgecolor='none', boxstyle='round, pad=0.0'))
 
         return fig, ax

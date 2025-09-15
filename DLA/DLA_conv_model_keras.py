@@ -2,25 +2,28 @@ from keras import activations, Input, layers, metrics, Model, models, optimizers
 import tensorflow as tf
 #from tensorflow.keras import models, optimizers, metrics, regularizers, Model, Input
 
-class CNN_for_DLA():
-    def __init__(self):
-        adapter = Model_adapter()
+class CNN_for_DLA_keras():
+    def __init__(self, dt='float32'):
+        self.dt = getattr(tf, dt)
+        tf.keras.backend.set_floatx(dt)
+        adapter = Model_adapter(dt=self.dt)
         self.model = Model(inputs=adapter.inputs, outputs=adapter.outputs)
-        self.model.compile(optimizer=optimizers.Adam(learning_rate=0.0002),
+        self.model.compile(optimizer=optimizers.Adam(learning_rate=0.0001),
                            loss={'ide': adapter.ide_loss, 'red': adapter.red_loss, 'col': adapter.col_loss},
-                           loss_weights=[1, 1, 1],
+                           loss_weights=[1.0, 1.0, 1.0],
                            #metrics = ['accuracy']
                            metrics={'ide': [adapter.BinaryTruePositives(), adapter.BinaryFalsePositives(), adapter.BinaryFalseNegatives()]}
                            )
 
-class Model_adapter:
+    def predict(self, specs):
+        return self.model.predict(specs)
 
-    def __init__(self):
-        self.zero = tf.convert_to_tensor(0.0, dtype=tf.float32)
-        self.one = tf.convert_to_tensor(1.0, dtype=tf.float32)
-        self.conf = tf.convert_to_tensor(0.5, dtype=tf.float32)
-        self.scale = tf.convert_to_tensor(1, dtype=tf.float32)
-        self.eps = tf.convert_to_tensor(0.000001, dtype=tf.float32)
+class Model_adapter:
+    def __init__(self, dt):
+        self.zero = tf.convert_to_tensor(0.0, dtype=dt)
+        self.one = tf.convert_to_tensor(1.0, dtype=dt)
+        self.conf = tf.convert_to_tensor(0.5, dtype=dt)
+        self.eps = tf.convert_to_tensor(0.000001, dtype=dt)
         self.inputs = Input(shape=(400, 1), name='input')
         self.define_model()
 
@@ -42,7 +45,6 @@ class Model_adapter:
         self.outputs = [ide, red, col]
 
     def define_model_reduced(self, dropout=0.1, regul=0.005, activation='elu'):
-        self.inputs = Input(shape=(400, 1), name='input')
         x = layers.Conv1D(100, 32, strides=3, activation=activation, kernel_regularizer=regularizers.L2(regul), bias_regularizer=regularizers.L2(regul))(self.inputs)
         x = layers.Dropout(dropout)(x)
         x = layers.MaxPooling1D(strides=2, pool_size=7)(x)
@@ -59,7 +61,6 @@ class Model_adapter:
         self.outputs = [ide, red, col]
 
     def define_model(self, dropout=0.1, regul=0.005, activation='elu'):
-        self.inputs = Input(shape=(400, 1), name='input')
         x = layers.Conv1D(100, 32, strides=3, activation=activation, kernel_regularizer=regularizers.L2(regul), bias_regularizer=regularizers.L2(regul))(self.inputs)
         x = layers.Dropout(dropout)(x)
         x = layers.MaxPooling1D(strides=2, pool_size=7)(x)
@@ -105,9 +106,10 @@ class Model_adapter:
         return tf.math.reduce_sum(tf.subtract(a, b), axis=-1)
 
     def red_loss(self, y_true, y_pred):
+        y_ide = tf.reshape(y_true[:,0], shape=tf.shape(y_pred))
         y_new = tf.reshape(y_true[:,1], shape=tf.shape(y_pred))
         #return tf.math.reduce_mean(tf.math.squared_difference(y_pred, y_new), axis=-1)
-        return tf.math.reduce_sum(tf.multiply(tf.math.squared_difference(y_pred, y_new), self.scale), axis=-1)
+        return tf.math.reduce_sum(tf.math.multiply(tf.math.divide(y_ide, tf.math.add(y_ide, self.eps)), tf.math.squared_difference(y_pred, y_new)), axis=-1)
 
     def col_loss(self, y_true, y_pred):
         y_ide = tf.reshape(y_true[:,0], shape=tf.shape(y_pred))

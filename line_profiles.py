@@ -38,7 +38,7 @@ class line():
 
 
 @jit(forceobj=True, looplift=True)
-def gauss(x, s, x0=0):
+def gauss(x, s, x0=0.0):
     """
     gauss function
     """
@@ -58,7 +58,7 @@ def errf_v2(x):
     else:
         return tau - 1
 
-@jit(forceobj=True, looplift=True)
+@jit(forceobj=True)
 def convolve_res(l, f, R):
     """
     Convolve flux with instrument function specified by resolution R

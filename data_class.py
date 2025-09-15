@@ -6,7 +6,7 @@ from sklearn.cluster import MeanShift
 import warnings
 
 from .stats import distr1d
-from .tools import Timer
+from .utils import Timer
 class data_structure(list):
     """
     This class contains data structure that is used to DLA search.
@@ -22,7 +22,7 @@ class data_structure(list):
         self.parent = parent
         self.shape = (0, )
         self.attrs = ['specs', 'reds', 'flag', 'pos', 'logN', 'inds']
-        self.dtype = {'specs': np.float32, 'reds': np.float32, 'flag': bool, 'pos': int, 'logN': np.float32,
+        self.dtype = {'specs': self.parent.dt, 'reds': self.parent.dt, 'flag': bool, 'pos': int, 'logN': self.parent.dt,
                       'inds': int, 'labels': [('flag', np.bool_), ('pos', np.int_), ('logN', np.single)]}
         self.timer = Timer() if timing else None
         self.filename = filename
@@ -215,12 +215,10 @@ class data_structure(list):
 
             x = self.data['full/specs']
 
-            self.append_mask(dset='train', mask=m, randomize=True) #specs=self.data['full/specs'][m,:][m2], reds=self.data['full/reds'][m][m2], inds=self.data['full/inds'][m][m2], flag=self.data['full/flag'][m][m2], dla_pos=self.data['full/dla_pos'][m][m2], dla_NHI=self.data['full/dla_NHI'][m][m2])
+            self.append_mask(dset='train', mask=m, randomize=True)
             if self.timer != None:
                 self.timer.time(f'append {i}')
 
-        #for attr in self.attrs:
-        #    self.data.create_dataset('/'.join(dset, attr), shape=(0,) + (self.window,) * (attr == 'specs'), dtype=self.dtype[attr], maxshape=(None,) + (self.window,) * (attr == 'specs'))
         self.valid = np.where(self.valid)[0]
 
     def check_bads(self, plate, mjd, fiberid):
@@ -262,7 +260,7 @@ class data_structure(list):
             return self.make(self.parent.cat, ind=inds, dropout=0.0, dropout_dla=0.0)
 
 
-    def get_abs_from_CNN(self, ind, reds=None, preds=None, plot=False, threshold=0.5, lab=1215.67, timer=False):
+    def get_abs_from_CNN(self, ind, reds=None, preds=None, plot=False, threshold=None, timer=False):
         """
         Get the DLA catalog from the spectrum using the statistics of the CNN results.
         parameters:
@@ -272,32 +270,35 @@ class data_structure(list):
         if timer:
             t = Timer('cat')
 
+        if threshold is None:
+            threshold = self.parent.threshold
+
         if reds is None and preds is None:
             specs, reds, *other = self.get_spec(ind)
             #print(spec)
             if timer:
                 t.time('get')
             if self.parent.cnn != None:
-                preds = self.parent.cnn.model.predict(specs)
-                preds[1] = preds[1] * 10
+                preds = self.parent.cnn.predict(specs)
+                preds[1] = preds[1] * self.parent.abs_window
                 preds[2] = preds[2] * (self.parent.N_range[1] - self.parent.N_range[0]) + self.parent.N_range[0]
             else:
                 warnings.warn("There is no CNN model to predict", UserWarning)
             if timer:
                 t.time('pred')
-        abs = self.get_abs(preds, reds, ind=ind, plot=plot, threshold=threshold, lab=lab)
+        abs = self.get_abs(preds, reds, ind=ind, threshold=threshold)
         if timer:
             t.time('stats')
         return abs
 
-    def get_abs(self, preds, reds, ind=0, plot=False, threshold=0.5, lab=1215.67):
-        print("get abs for ind:", ind)
-        m = (preds[0] > 0.1).flatten()
-        #print(preds[1].flatten()[m], reds[m])
+    def get_abs(self, preds, reds, ind=0, threshold=0.5, clean=False):
+        #print("get abs for ind:", ind)
+        m = (preds[0] > threshold).flatten()
+        #print(preds[0].flatten())
         zd = (reds + 1) * 10 ** (-preds[1].flatten() * 1e-4) - 1
         abs = []
         if sum(m) > 3:
-            ms = MeanShift(bandwidth=60, bin_seeding=True)
+            ms = MeanShift(bandwidth=self.parent.abs_window, bin_seeding=True)
             inds = np.where(m)[0]
             X = np.array(list(zip(inds, np.zeros(len(inds)))), dtype=int)
 
@@ -322,17 +323,22 @@ class data_structure(list):
                 prob = np.mean(preds[0].flatten()[np.max([0, iz-60]):np.min([iz+60, len(preds[0])])]) #
                 prob = np.median(preds[0][mz])
                 #print(iz, np.median(preds[0][mz]), np.mean(preds[0].flatten()[np.max([0, iz-30]):np.min([iz+30, len(preds[0])])]), preds[0].flatten()[np.max([0, iz-30]):np.min([iz+30, len(preds[0])])])
-                if prob > threshold and np.all([(l[0] > quant[2]) + (l[1] < quant[0]) for l in l_series]):
-                    #print("not in lyman series")
-                    abs.append([ind, prob]) #np.median(preds[0][mz])])
-                    abs[-1].extend([quant[1], quant[0] - quant[1], quant[2] - quant[1]])
-                    l_series.extend([[(quant[1] + 2 * (quant[0] - quant[1]) + 1) * self.parent.lyb / self.parent.lya - 1, (quant[1] + 2 * (quant[2] - quant[1]) + 1) * self.parent.lyb / self.parent.lya - 1],
-                                     [(quant[1] + 2 * (quant[0] - quant[1]) + 1) * self.parent.lyc / self.parent.lya - 1, (quant[1] + 2 * (quant[2] - quant[1]) + 1) * self.parent.lyc / self.parent.lya - 1]
-                                     ])
-                    if len(preds) > 2:
-                        N = preds[2].flatten()[mz]
-                        quant = np.quantile(N, [0.159, 0.5, 0.841], weights=preds[0].flatten()[mz], method='inverted_cdf')
+                if prob > threshold:
+                    if ~clean or np.all([(l[0] > quant[2]) + (l[1] < quant[0]) for l in l_series]):
+                        #print("not in lyman series")
+                        abs.append([ind, prob]) #np.median(preds[0][mz])])
+                        #print(ind, self.parent.cat.cat[f'meta/{ind}/SNR_DLA'])
+                        #abs[-1].extend([self.parent.cat.cat[f'meta/{ind}/SNR_DLA']])
                         abs[-1].extend([quant[1], quant[0] - quant[1], quant[2] - quant[1]])
+                        if clean:
+                            l_series.extend([[(quant[1] + 2 * (quant[0] - quant[1]) + 1) * self.parent.lyb / self.parent.lya - 1, (quant[1] + 2 * (quant[2] - quant[1]) + 1) * self.parent.lyb / self.parent.lya - 1],
+                                             [(quant[1] + 2 * (quant[0] - quant[1]) + 1) * self.parent.lyc / self.parent.lya - 1, (quant[1] + 2 * (quant[2] - quant[1]) + 1) * self.parent.lyc / self.parent.lya - 1]
+                                             ])
+                        if len(preds) > 2:
+                            N = preds[2].flatten()[mz]
+                            quant = np.quantile(N, [0.159, 0.5, 0.841], weights=preds[0].flatten()[mz], method='inverted_cdf')
+                            abs[-1].extend([quant[1], quant[0] - quant[1], quant[2] - quant[1]])
+
                 #print(l_series)
                 #print(abs)
         return abs
